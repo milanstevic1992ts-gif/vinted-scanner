@@ -4,7 +4,7 @@ import it.ge360.vintedscanner.model.SharedListingDraft
 import java.security.MessageDigest
 
 object SharedListingParser {
-    private val urlRegex = Regex("""https?://[^\s]+""", RegexOption.IGNORE_CASE)
+    private val urlRegex = Regex("""(?:https?://|vinted://)[^\s]+""", RegexOption.IGNORE_CASE)
     private val priceRegexes = listOf(
         Regex("""(?:€|EUR)\s*([0-9]+(?:[.,][0-9]{1,2})?)""", RegexOption.IGNORE_CASE),
         Regex("""([0-9]+(?:[.,][0-9]{1,2})?)\s*(?:€|EUR)""", RegexOption.IGNORE_CASE)
