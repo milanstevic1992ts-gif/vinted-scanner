@@ -3,6 +3,8 @@ package it.ge360.vintedscanner.data
 import it.ge360.vintedscanner.domain.MarketEstimator
 import it.ge360.vintedscanner.domain.OpportunityScorer
 import it.ge360.vintedscanner.domain.PreferenceEngine
+import it.ge360.vintedscanner.model.FeedbackEvent
+import it.ge360.vintedscanner.model.FeedbackReason
 import it.ge360.vintedscanner.model.Listing
 import it.ge360.vintedscanner.model.PreferenceProfile
 import it.ge360.vintedscanner.model.PricePoint
@@ -92,6 +94,18 @@ class ScannerRepository(
     suspend fun setNotInterested(listingId: String) = withContext(Dispatchers.IO) {
         database.setNotInterested(listingId)
         recomputeIntelligence()
+    }
+
+    suspend fun setFeedback(
+        listingId: String,
+        reason: FeedbackReason
+    ) = withContext(Dispatchers.IO) {
+        database.setFeedbackReason(listingId, reason)
+        recomputeIntelligence()
+    }
+
+    suspend fun feedbackEvents(): List<FeedbackEvent> = withContext(Dispatchers.IO) {
+        database.getFeedbackEvents()
     }
 
     suspend fun priceHistory(listingId: String): List<PricePoint> = withContext(Dispatchers.IO) {
