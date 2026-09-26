@@ -4,7 +4,7 @@ APK Android standalone per raccogliere annunci condivisi dal telefono, confronta
 
 ## Stato attuale
 
-Versione applicazione: **0.9.0**
+Versione applicazione: **0.10.0**
 
 ### Fase 1 — Fondazioni
 - [x] progetto Android nativo Kotlin + Jetpack Compose
@@ -145,6 +145,24 @@ Versione applicazione: **0.9.0**
 - [ ] eseguire fisicamente almeno 25 annunci reali sul telefono
 - [ ] ricalibrare soglie e pesi usando il report reale
 
+### Fase 10 — Configurazione sorgenti reali
+- [x] sorgente automatica Notifiche Vinted
+- [x] filtro esclusivo pacchetto Android ufficiale `fr.vinted`
+- [x] servizio Android `NotificationListenerService`
+- [x] apertura guidata impostazioni accesso notifiche
+- [x] refresh automatico diagnostica al ritorno nell'app
+- [x] import automatico quando notifica contiene link e prezzo
+- [x] supporto URL HTTPS e deep-link `vinted://`
+- [x] deduplicazione annunci notificati
+- [x] matching automatico con ricerche salvate
+- [x] diagnostica eventi ricevuti ma non importabili
+- [x] dettaglio ultimo evento sorgente
+- [x] Live distingue OPERATIVO da SENZA SORGENTE
+- [x] switch nascosto per sorgenti non configurabili
+- [x] API remota mantenuta separata e non simulata
+- [x] migrazione SQLite v8
+- [x] test catalogo sorgenti e deep-link Vinted
+
 ## Come funziona l'Intelligence locale
 
 Vinted Scanner non inventa un prezzo "AI". Usa gli annunci presenti nel database locale:
@@ -165,11 +183,12 @@ Il cuore insegna un segnale positivo leggero. I feedback motivati insegnano inve
 
 Il core usa l'interfaccia `ListingSource`, quindi UI, archivio, Intelligence e notifiche non dipendono da uno specifico provider.
 
-Sorgenti presenti nella 0.9.0:
+Sorgenti presenti nella 0.10.0:
 - **Condivisione Android**: attiva e realmente utilizzabile;
-- **Sorgente remota autorizzata**: architettura pronta, ma intenzionalmente marcata `Non configurata` finché non viene collegato un accesso autorizzato reale.
+- **Notifiche Vinted**: sorgente automatica event-driven che ascolta esclusivamente il pacchetto Android ufficiale `fr.vinted`; richiede il permesso Android di accesso alle notifiche;
+- **API remota autorizzata**: predisposta ma non attivabile senza credenziali/API Vinted ufficiali o autorizzate.
 
-Il pannello Diagnostica Sorgenti mostra stato, ultimo evento, ultimo scan, ultimo successo, quantità ricevute ed eventuali errori.
+Il pannello Diagnostica Sorgenti mostra stato, ultimo evento, ultimo scan, ultimo successo, quantità ricevute, dettaglio dell'ultimo evento ed eventuali errori. Quando manca il permesso alle notifiche compare il pulsante **ABILITA ACCESSO NOTIFICHE** invece di uno switch ingannevole.
 
 Il progetto non include bypass di login, anti-bot, automazioni di acquisto o meccanismi per aggirare protezioni della piattaforma.
 
@@ -202,7 +221,9 @@ L'Indice Affare non è una probabilità di guadagno e non sostituisce lo score t
 
 ## Modalità Live
 
-La modalità Live è avviata solo dall'utente e resta visibile tramite una notifica persistente. Il servizio esegue il ciclo dello scanner ogni 60 secondi usando esclusivamente il connettore configurato nell'app. Se non è presente una sorgente remota autorizzata, non inventa dati né aggira protezioni della piattaforma.
+La modalità Live è avviata solo dall'utente. Nella 0.10.0 può ricevere eventi dalla sorgente **Notifiche Vinted** e continua a supportare il ciclo periodico per eventuali sorgenti remote autorizzate. Se Live è acceso ma nessuna sorgente automatica è pronta, l'interfaccia mostra **LIVE SENZA SORGENTE** invece di dichiarare falsamente il monitoraggio operativo.
+
+Per la sorgente Notifiche Vinted Android richiede una concessione manuale una tantum in **Accesso notifiche**. L'app non può concedersi questo permesso da sola.
 
 ## Backup
 
