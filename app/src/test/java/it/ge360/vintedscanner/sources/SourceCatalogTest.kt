@@ -25,6 +25,7 @@ class SourceCatalogTest {
         assertEquals(SourceKind.VINTED_NOTIFICATIONS, source.kind)
         assertTrue(source.supportsAutomaticScan)
         assertTrue(source.requiresConfiguration)
+        assertEquals("fr.vinted", SourceCatalog.VINTED_ANDROID_PACKAGE)
     }
 
     @Test
