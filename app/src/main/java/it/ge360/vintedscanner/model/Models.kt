@@ -164,6 +164,7 @@ data class CalibrationSummary(
 
 enum class SourceKind {
     MANUAL_SHARE,
+    VINTED_NOTIFICATIONS,
     AUTHORIZED_REMOTE
 }
 
@@ -193,5 +194,6 @@ data class SourceDiagnostic(
     val lastSuccessAt: Long? = null,
     val lastReceivedCount: Int = 0,
     val totalReceived: Long = 0,
+    val lastDetail: String? = null,
     val lastError: String? = null
 )
