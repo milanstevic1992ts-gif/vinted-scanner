@@ -943,7 +943,7 @@ private fun ListingCard(
                         shape = RoundedCornerShape(99.dp)
                     ) {
                         Text(
-                            "#" + (deal.dealIndex),
+                            deal.dealIndex.toString(),
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                             fontWeight = FontWeight.Bold
                         )
