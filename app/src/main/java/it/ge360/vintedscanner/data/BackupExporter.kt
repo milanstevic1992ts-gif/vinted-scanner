@@ -17,7 +17,7 @@ object BackupExporter {
     ): String = buildString {
         append("{\n")
         append("  \"format\": \"vinted-scanner-backup\",\n")
-        append("  \"version\": 1,\n")
+        append("  \"version\": 2,\n")
         append("  \"generatedAt\": \"").append(isoDate(generatedAt)).append("\",\n")
 
         append("  \"searches\": [\n")
@@ -61,6 +61,7 @@ object BackupExporter {
             append("\"preferenceBoost\":").append(item.preferenceBoost).append(',')
             append("\"favorite\":").append(item.favorite).append(',')
             append("\"feedback\":").append(item.feedback).append(',')
+            append("\"feedbackReason\":").append(json(item.feedbackReason.name)).append(',')
             append("\"riskFlags\":[")
             item.riskFlags.forEachIndexed { riskIndex, flag ->
                 append(json(flag))
@@ -78,6 +79,14 @@ object BackupExporter {
             append(json(entry.key)).append(':').append(entry.value)
             if (index != weights.lastIndex) append(',')
         }
+        append("},\n")
+        append("  \"learningProfile\": {")
+        append("\"purchasedCount\":").append(profile.purchasedCount).append(',')
+        append("\"discardedCount\":").append(profile.discardedCount).append(',')
+        append("\"tooExpensiveCount\":").append(profile.tooExpensiveCount).append(',')
+        append("\"badConditionCount\":").append(profile.badConditionCount).append(',')
+        append("\"wrongModelCount\":").append(profile.wrongModelCount).append(',')
+        append("\"averageTooExpensiveRatio\":").append(numberOrNull(profile.averageTooExpensiveRatio))
         append("}\n")
         append("}\n")
     }
