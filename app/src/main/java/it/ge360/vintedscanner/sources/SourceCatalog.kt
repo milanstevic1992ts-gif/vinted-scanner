@@ -6,6 +6,7 @@ import it.ge360.vintedscanner.model.SourceKind
 object SourceCatalog {
     const val ANDROID_SHARE_ID = "android_share"
     const val VINTED_NOTIFICATIONS_ID = "vinted_notifications"
+    const val VINTED_ANDROID_PACKAGE = "fr.vinted"
     const val AUTHORIZED_REMOTE_ID = "authorized_remote"
 
     val androidShare = SourceDescriptor(
