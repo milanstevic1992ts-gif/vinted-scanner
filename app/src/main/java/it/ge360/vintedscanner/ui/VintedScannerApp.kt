@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.ThumbDown
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -147,7 +148,7 @@ fun VintedScannerApp(viewModel: MainViewModel) {
                 CircularProgressIndicator(Modifier.padding(24.dp))
             } else {
                 when (tab) {
-                    0 -> Dashboard(state, viewModel::toggleFavorite, viewModel::showHistory)
+                    0 -> Dashboard(state, viewModel::toggleFavorite, viewModel::showHistory, viewModel::notInterested)
                     1 -> Searches(
                         state = state,
                         createRequest = createRequest,
@@ -159,13 +160,15 @@ fun VintedScannerApp(viewModel: MainViewModel) {
                         listings = state.opportunities,
                         emptyText = "Le occasioni salvate o trovate compariranno qui.",
                         onFavorite = viewModel::toggleFavorite,
-                        onHistory = viewModel::showHistory
+                        onHistory = viewModel::showHistory,
+                        onNotInterested = viewModel::notInterested
                     )
                     else -> Opportunities(
                         listings = state.favorites,
                         emptyText = "La watchlist è vuota. Tocca il cuore su un annuncio.",
                         onFavorite = viewModel::toggleFavorite,
-                        onHistory = viewModel::showHistory
+                        onHistory = viewModel::showHistory,
+                        onNotInterested = viewModel::notInterested
                     )
                 }
             }
@@ -177,7 +180,8 @@ fun VintedScannerApp(viewModel: MainViewModel) {
 private fun Dashboard(
     state: ScannerUiState,
     onFavorite: (Listing) -> Unit,
-    onHistory: (Listing) -> Unit
+    onHistory: (Listing) -> Unit,
+    onNotInterested: (Listing) -> Unit
 ) {
     LazyColumn(
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -221,6 +225,29 @@ private fun Dashboard(
                 }
             }
         }
+        item {
+            val learned = state.preferenceProfile.tokenWeights
+                .entries
+                .sortedByDescending { kotlin.math.abs(it.value) }
+                .take(5)
+            Card(Modifier.fillMaxWidth()) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.padding(16.dp)
+                ) {
+                    Text("Intelligence locale", style = MaterialTheme.typography.titleMedium)
+                    if (learned.isEmpty()) {
+                        Text("Ancora neutrale: usa il cuore o 'Non mi interessa' per far imparare le tue preferenze.")
+                    } else {
+                        Text(
+                            learned.joinToString(" · ") { entry ->
+                                entry.key + " " + if (entry.value >= 0) "+" + entry.value else entry.value.toString()
+                            }
+                        )
+                    }
+                }
+            }
+        }
         item { Text("In evidenza", style = MaterialTheme.typography.titleLarge) }
         if (state.opportunities.isEmpty()) {
             item {
@@ -228,7 +255,7 @@ private fun Dashboard(
             }
         } else {
             items(state.opportunities.take(5), key = { it.id }) {
-                ListingCard(it, onFavorite, onHistory)
+                ListingCard(it, onFavorite, onHistory, onNotInterested)
             }
         }
     }
@@ -415,7 +442,8 @@ private fun Opportunities(
     listings: List<Listing>,
     emptyText: String,
     onFavorite: (Listing) -> Unit,
-    onHistory: (Listing) -> Unit
+    onHistory: (Listing) -> Unit,
+    onNotInterested: (Listing) -> Unit
 ) {
     LazyColumn(
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -426,7 +454,7 @@ private fun Opportunities(
             item { EmptyCard(emptyText) }
         } else {
             items(listings, key = { it.id }) {
-                ListingCard(it, onFavorite, onHistory)
+                ListingCard(it, onFavorite, onHistory, onNotInterested)
             }
         }
     }
@@ -436,7 +464,8 @@ private fun Opportunities(
 private fun ListingCard(
     listing: Listing,
     onFavorite: (Listing) -> Unit,
-    onHistory: (Listing) -> Unit
+    onHistory: (Listing) -> Unit,
+    onNotInterested: (Listing) -> Unit
 ) {
     val context = LocalContext.current
     Card(Modifier.fillMaxWidth()) {
@@ -453,8 +482,22 @@ private fun ListingCard(
                 Text(listing.score.toString() + "/100", style = MaterialTheme.typography.titleMedium)
             }
             Text("€" + "%.2f".format(listing.price))
-            listing.marketMedian?.let { Text("Valore osservato: €" + "%.2f".format(it)) }
+            listing.marketMedian?.let {
+                Text("Valore osservato: €" + "%.2f".format(it))
+                Text(
+                    "Confronti: " + listing.marketSampleCount +
+                        " · confidenza " + listing.marketConfidence + "%",
+                    style = MaterialTheme.typography.labelMedium
+                )
+            }
             listing.estimatedMargin?.let { Text("Margine stimato: €" + "%.2f".format(it)) }
+            if (listing.preferenceBoost != 0) {
+                Text(
+                    "Preferenze personali: " +
+                        if (listing.preferenceBoost > 0) "+" + listing.preferenceBoost else listing.preferenceBoost.toString(),
+                    style = MaterialTheme.typography.labelMedium
+                )
+            }
             listing.condition?.let { Text("Condizione: " + it) }
             if (listing.riskFlags.isNotEmpty()) {
                 Text("Attenzione: " + listing.riskFlags.joinToString())
@@ -468,6 +511,12 @@ private fun ListingCard(
                 }
                 IconButton(onClick = { onHistory(listing) }) {
                     Icon(Icons.Default.History, contentDescription = "Storico prezzi")
+                }
+                IconButton(onClick = { onNotInterested(listing) }) {
+                    Icon(
+                        Icons.Default.ThumbDown,
+                        contentDescription = "Non mi interessa"
+                    )
                 }
                 IconButton(onClick = { onFavorite(listing) }) {
                     Icon(
@@ -502,10 +551,10 @@ private fun SharedImportDialog(
                     .heightIn(max = 480.dp)
                     .verticalScroll(rememberScrollState())
             ) {
-                Text("Controlla i dati ricevuti dalla condivisione prima di salvarli.")
+                Text("Controlla i dati ricevuti. Se lasci vuoto il valore di riferimento, Vinted Scanner proverà a stimarlo dai confronti locali.")
                 TextField(title, { title = it }, label = { Text("Titolo") }, modifier = Modifier.fillMaxWidth())
                 TextField(price, { price = it }, label = { Text("Prezzo €") }, modifier = Modifier.fillMaxWidth())
-                TextField(median, { median = it }, label = { Text("Valore medio osservato €") }, modifier = Modifier.fillMaxWidth())
+                TextField(median, { median = it }, label = { Text("Valore di riferimento € (opzionale)") }, modifier = Modifier.fillMaxWidth())
                 TextField(condition, { condition = it }, label = { Text("Condizione / note") }, modifier = Modifier.fillMaxWidth())
                 TextField(url, { url = it }, label = { Text("Link annuncio") }, modifier = Modifier.fillMaxWidth())
             }
