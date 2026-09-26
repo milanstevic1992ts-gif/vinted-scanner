@@ -1,5 +1,6 @@
 package it.ge360.vintedscanner.domain
 
+import it.ge360.vintedscanner.model.FeedbackReason
 import it.ge360.vintedscanner.model.Listing
 import it.ge360.vintedscanner.model.PreferenceProfile
 import org.junit.Assert.assertEquals
@@ -63,6 +64,26 @@ class DealRankerTest {
         )
 
         assertTrue(DealRanker.rank(listOf(listing), now).isEmpty())
+    }
+
+    @Test
+    fun purchasedItemsAreExcludedFromActiveDealCenter() {
+        val purchased = Listing(
+            id = "purchased",
+            searchId = 0,
+            title = "Nike Air Max 95",
+            price = 40.0,
+            marketMedian = 100.0,
+            marketConfidence = 90,
+            marketSimilarity = 90,
+            score = 95,
+            estimatedMargin = 55.0,
+            feedback = 1,
+            feedbackReason = FeedbackReason.PURCHASED,
+            url = "https://example.invalid/purchased"
+        )
+
+        assertTrue(DealRanker.rank(listOf(purchased), now).isEmpty())
     }
 
     @Test
