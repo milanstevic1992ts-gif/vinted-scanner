@@ -2,6 +2,10 @@ package it.ge360.vintedscanner.ui
 
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,13 +16,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -32,16 +39,21 @@ import androidx.compose.material.icons.filled.ThumbDown
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -55,22 +67,49 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import it.ge360.vintedscanner.model.Listing
+import it.ge360.vintedscanner.model.PricePoint
 import it.ge360.vintedscanner.model.SavedSearch
 import it.ge360.vintedscanner.model.SharedListingDraft
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.max
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VintedScannerApp(viewModel: MainViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     var tab by remember { mutableIntStateOf(0) }
     var createRequest by remember { mutableStateOf(false) }
+
+    val backupPayload = state.backupPayload
+    val backupLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null && backupPayload != null) {
+            runCatching {
+                context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use {
+                    it.write(backupPayload)
+                }
+            }
+        }
+        viewModel.backupConsumed()
+    }
+
+    LaunchedEffect(backupPayload) {
+        if (backupPayload != null) {
+            val stamp = SimpleDateFormat("yyyyMMdd-HHmm", Locale.US).format(Date())
+            backupLauncher.launch("vinted-scanner-backup-$stamp.json")
+        }
+    }
 
     state.sharedDraft?.let { draft ->
         SharedImportDialog(
@@ -93,8 +132,13 @@ fun VintedScannerApp(viewModel: MainViewModel) {
             TopAppBar(
                 title = {
                     Column {
-                        Text("Vinted Scanner")
-                        Text("Caccia alle occasioni", style = MaterialTheme.typography.labelMedium)
+                        Text("Vinted Scanner", fontWeight = FontWeight.Bold)
+                        Text(
+                            if (state.liveMode) "LIVE ATTIVO" else "Scanner locale",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (state.liveMode) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 },
                 actions = {
@@ -127,13 +171,19 @@ fun VintedScannerApp(viewModel: MainViewModel) {
                     selected = tab == 2,
                     onClick = { tab = 2 },
                     icon = { Icon(Icons.Default.Star, null) },
-                    label = { Text("Occasioni") }
+                    label = { Text("Affari") }
                 )
                 NavigationBarItem(
                     selected = tab == 3,
                     onClick = { tab = 3 },
+                    icon = { Icon(Icons.Default.Archive, null) },
+                    label = { Text("Archivio") }
+                )
+                NavigationBarItem(
+                    selected = tab == 4,
+                    onClick = { tab = 4 },
                     icon = { Icon(Icons.Default.Favorite, null) },
-                    label = { Text("Watchlist") }
+                    label = { Text("Watch") }
                 )
             }
         }
@@ -142,13 +192,20 @@ fun VintedScannerApp(viewModel: MainViewModel) {
             Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(horizontal = 16.dp)
+                .padding(horizontal = 14.dp)
         ) {
             if (state.loading) {
                 CircularProgressIndicator(Modifier.padding(24.dp))
             } else {
                 when (tab) {
-                    0 -> Dashboard(state, viewModel::toggleFavorite, viewModel::showHistory, viewModel::notInterested)
+                    0 -> Dashboard(
+                        state = state,
+                        onFavorite = viewModel::toggleFavorite,
+                        onHistory = viewModel::showHistory,
+                        onNotInterested = viewModel::notInterested,
+                        onLiveChange = viewModel::setLiveMode,
+                        onBackup = viewModel::prepareBackup
+                    )
                     1 -> Searches(
                         state = state,
                         createRequest = createRequest,
@@ -158,7 +215,13 @@ fun VintedScannerApp(viewModel: MainViewModel) {
                     )
                     2 -> Opportunities(
                         listings = state.opportunities,
-                        emptyText = "Le occasioni salvate o trovate compariranno qui.",
+                        emptyText = "Le occasioni migliori compariranno qui.",
+                        onFavorite = viewModel::toggleFavorite,
+                        onHistory = viewModel::showHistory,
+                        onNotInterested = viewModel::notInterested
+                    )
+                    3 -> ArchiveScreen(
+                        listings = state.archive,
                         onFavorite = viewModel::toggleFavorite,
                         onHistory = viewModel::showHistory,
                         onNotInterested = viewModel::notInterested
@@ -181,80 +244,188 @@ private fun Dashboard(
     state: ScannerUiState,
     onFavorite: (Listing) -> Unit,
     onHistory: (Listing) -> Unit,
-    onNotInterested: (Listing) -> Unit
+    onNotInterested: (Listing) -> Unit,
+    onLiveChange: (Boolean) -> Unit,
+    onBackup: () -> Unit
 ) {
     LazyColumn(
         verticalArrangement = Arrangement.spacedBy(12.dp),
         modifier = Modifier.fillMaxSize()
     ) {
         item { Spacer(Modifier.height(4.dp)) }
-        item { Text("Oggi", style = MaterialTheme.typography.headlineMedium) }
+
         item {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxWidth()
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                ),
+                shape = RoundedCornerShape(24.dp)
             ) {
-                MetricCard("Ricerche", state.searches.count { it.active }.toString(), Modifier.weight(1f))
-                MetricCard("Occasioni", state.opportunities.size.toString(), Modifier.weight(1f))
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.padding(18.dp)
+                ) {
+                    Text(
+                        "Scanner intelligente",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        if (state.liveMode)
+                            "Modalità Live attiva: il telefono mantiene il monitoraggio con notifica persistente."
+                        else
+                            "Attiva Live quando vuoi controlli frequenti anche lasciando l'app in background."
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                if (state.liveMode) "LIVE ATTIVO" else "LIVE SPENTO",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                if (state.liveMode) "Controllo ogni 60 s" else "Modalità standard",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                        Switch(
+                            checked = state.liveMode,
+                            onCheckedChange = onLiveChange
+                        )
+                    }
+                }
             }
         }
+
         item {
             Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                MetricCard("Watchlist", state.favorites.size.toString(), Modifier.weight(1f))
-                val best = state.opportunities.maxByOrNull { it.score }
                 MetricCard(
-                    "Migliore",
-                    best?.score?.let { it.toString() + "/100" } ?: "—",
+                    "Ricerche",
+                    state.searches.count { it.active }.toString(),
+                    Modifier.weight(1f)
+                )
+                MetricCard(
+                    "Affari",
+                    state.opportunities.count { it.score >= 75 }.toString(),
                     Modifier.weight(1f)
                 )
             }
         }
+
         item {
-            Card(Modifier.fillMaxWidth()) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                MetricCard("Archivio", state.archive.size.toString(), Modifier.weight(1f))
+                MetricCard("Watchlist", state.favorites.size.toString(), Modifier.weight(1f))
+            }
+        }
+
+        item {
+            val best = state.opportunities.maxByOrNull { it.score }
+            Card(
+                Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp)
+            ) {
                 Column(
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier.padding(16.dp)
                 ) {
-                    Text("Importa direttamente dal telefono", style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        "Da Vinted usa Condividi → Vinted Scanner. L'annuncio viene deduplicato e lo storico prezzo resta sul telefono."
-                    )
+                    Text("Migliore occasione", style = MaterialTheme.typography.labelLarge)
+                    if (best == null) {
+                        Text("Ancora nessun dato sufficiente.")
+                    } else {
+                        Text(
+                            best.title,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            best.score.toString() + "/100" +
+                                (best.estimatedMargin?.let { " · +" + "%.2f".format(it) + " €" } ?: "")
+                        )
+                        LinearProgressIndicator(
+                            progress = { best.score / 100f },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
                 }
             }
         }
+
         item {
             val learned = state.preferenceProfile.tokenWeights
                 .entries
                 .sortedByDescending { kotlin.math.abs(it.value) }
-                .take(5)
-            Card(Modifier.fillMaxWidth()) {
+                .take(6)
+
+            Card(
+                Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp)
+            ) {
                 Column(
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.padding(16.dp)
                 ) {
-                    Text("Intelligence locale", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Intelligence locale",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
                     if (learned.isEmpty()) {
-                        Text("Ancora neutrale: usa il cuore o 'Non mi interessa' per far imparare le tue preferenze.")
+                        Text("Ancora neutrale. Cuore e “Non mi interessa” fanno imparare l'app.")
                     } else {
                         Text(
                             learned.joinToString(" · ") { entry ->
-                                entry.key + " " + if (entry.value >= 0) "+" + entry.value else entry.value.toString()
+                                entry.key + " " +
+                                    if (entry.value >= 0) "+" + entry.value else entry.value.toString()
                             }
                         )
                     }
                 }
             }
         }
+
+        item {
+            Card(
+                Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp)
+            ) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(16.dp)
+                ) {
+                    Text(
+                        "Backup locale",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text("Esporta ricerche, archivio e preferenze in un JSON versionato.")
+                    Button(onClick = onBackup, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Default.Download, contentDescription = null)
+                        Spacer(Modifier.padding(4.dp))
+                        Text("ESPORTA BACKUP")
+                    }
+                }
+            }
+        }
+
         item { Text("In evidenza", style = MaterialTheme.typography.titleLarge) }
+
         if (state.opportunities.isEmpty()) {
             item {
-                EmptyCard("Nessun annuncio ancora. Condividi un annuncio con Vinted Scanner oppure crea una ricerca.")
+                EmptyCard("Condividi un annuncio con Vinted Scanner oppure crea una ricerca.")
             }
         } else {
-            items(state.opportunities.take(5), key = { it.id }) {
+            items(state.opportunities.take(4), key = { it.id }) {
                 ListingCard(it, onFavorite, onHistory, onNotInterested)
             }
         }
@@ -333,14 +504,18 @@ private fun SearchEditor(
     var condition by remember(existing?.id) { mutableStateOf(existing?.condition.orEmpty()) }
     var margin by remember(existing?.id) { mutableStateOf(existing?.minMargin?.toString() ?: "20") }
 
-    Card(Modifier.fillMaxWidth()) {
+    Card(
+        Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp)
+    ) {
         Column(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.padding(16.dp)
         ) {
             Text(
                 if (existing == null) "Nuova ricerca" else "Modifica ricerca",
-                style = MaterialTheme.typography.titleLarge
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
             )
             TextField(query, { query = it }, label = { Text("Cosa cerchi") }, modifier = Modifier.fillMaxWidth())
             TextField(brand, { brand = it }, label = { Text("Marca") }, modifier = Modifier.fillMaxWidth())
@@ -381,40 +556,50 @@ private fun SearchCard(
     onToggle: () -> Unit
 ) {
     val context = LocalContext.current
-    Card(Modifier.fillMaxWidth()) {
+    Card(
+        Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp)
+    ) {
         Column(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.padding(16.dp)
         ) {
             Row(Modifier.fillMaxWidth()) {
                 Column(Modifier.weight(1f)) {
-                    Text(search.query, style = MaterialTheme.typography.titleMedium)
-                    Text(if (search.active) "Attiva" else "In pausa", style = MaterialTheme.typography.labelMedium)
+                    Text(search.query, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(
+                        if (search.active) "Attiva" else "In pausa",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (search.active) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
                 Switch(checked = search.active, onCheckedChange = { onToggle() })
             }
 
             val details = mutableListOf<String>()
             search.brand?.let { details += it }
-            search.size?.let { details += "taglia " + it }
+            search.size?.let { details += "taglia $it" }
             search.condition?.let { details += it }
             search.maxPrice?.let { details += "max €" + "%.0f".format(it) }
             details += "margine €" + "%.0f".format(search.minMargin)
             Text(details.joinToString(" · "))
 
+            HorizontalDivider()
+
             Row(Modifier.fillMaxWidth()) {
                 TextButton(
                     onClick = {
                         val terms = listOfNotNull(search.brand, search.query).joinToString(" ")
-                        val uriBuilder = Uri.Builder()
+                        val builder = Uri.Builder()
                             .scheme("https")
                             .authority("www.vinted.it")
                             .appendPath("catalog")
                             .appendQueryParameter("search_text", terms)
                         search.maxPrice?.let {
-                            uriBuilder.appendQueryParameter("price_to", "%.0f".format(Locale.US, it))
+                            builder.appendQueryParameter("price_to", "%.0f".format(Locale.US, it))
                         }
-                        context.startActivity(Intent(Intent.ACTION_VIEW, uriBuilder.build()))
+                        context.startActivity(Intent(Intent.ACTION_VIEW, builder.build()))
                     },
                     modifier = Modifier.weight(1f)
                 ) {
@@ -461,6 +646,63 @@ private fun Opportunities(
 }
 
 @Composable
+private fun ArchiveScreen(
+    listings: List<Listing>,
+    onFavorite: (Listing) -> Unit,
+    onHistory: (Listing) -> Unit,
+    onNotInterested: (Listing) -> Unit
+) {
+    var filter by remember { mutableIntStateOf(0) }
+
+    val filtered = when (filter) {
+        1 -> listings.filter { it.favorite }
+        2 -> listings.filter { it.feedback < 0 }
+        else -> listings
+    }
+
+    LazyColumn(
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.fillMaxSize()
+    ) {
+        item { Spacer(Modifier.height(4.dp)) }
+        item {
+            Text(
+                "Archivio",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold
+            )
+        }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = filter == 0,
+                    onClick = { filter = 0 },
+                    label = { Text("Tutti") }
+                )
+                FilterChip(
+                    selected = filter == 1,
+                    onClick = { filter = 1 },
+                    label = { Text("Watch") }
+                )
+                FilterChip(
+                    selected = filter == 2,
+                    onClick = { filter = 2 },
+                    label = { Text("Scartati") }
+                )
+            }
+        }
+
+        if (filtered.isEmpty()) {
+            item { EmptyCard("Nessun annuncio in questa sezione.") }
+        } else {
+            items(filtered, key = { it.id }) {
+                ListingCard(it, onFavorite, onHistory, onNotInterested)
+            }
+        }
+    }
+}
+
+@Composable
 private fun ListingCard(
     listing: Listing,
     onFavorite: (Listing) -> Unit,
@@ -468,49 +710,108 @@ private fun ListingCard(
     onNotInterested: (Listing) -> Unit
 ) {
     val context = LocalContext.current
-    Card(Modifier.fillMaxWidth()) {
+
+    Card(
+        Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp)
+    ) {
         Column(
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(7.dp),
             modifier = Modifier.padding(16.dp)
         ) {
             Row(Modifier.fillMaxWidth()) {
-                Text(
-                    listing.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.weight(1f)
-                )
-                Text(listing.score.toString() + "/100", style = MaterialTheme.typography.titleMedium)
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        listing.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        formatDate(listing.lastSeenAt),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Surface(
+                    color = when {
+                        listing.score >= 80 -> MaterialTheme.colorScheme.primaryContainer
+                        listing.score >= 65 -> MaterialTheme.colorScheme.secondaryContainer
+                        else -> MaterialTheme.colorScheme.surfaceVariant
+                    },
+                    shape = RoundedCornerShape(99.dp)
+                ) {
+                    Text(
+                        listing.score.toString() + "/100",
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
-            Text("€" + "%.2f".format(listing.price))
+
+            Text(
+                "€" + "%.2f".format(listing.price),
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold
+            )
+
             listing.marketMedian?.let {
                 Text("Valore osservato: €" + "%.2f".format(it))
                 Text(
-                    "Confronti: " + listing.marketSampleCount +
+                    "Confronti " + listing.marketSampleCount +
                         " · confidenza " + listing.marketConfidence + "%",
                     style = MaterialTheme.typography.labelMedium
                 )
+                LinearProgressIndicator(
+                    progress = { listing.marketConfidence / 100f },
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
-            listing.estimatedMargin?.let { Text("Margine netto stimato: €" + "%.2f".format(it)) }
-            if (listing.shipping > 0) {
-                Text("Spese extra considerate: €" + "%.2f".format(listing.shipping), style = MaterialTheme.typography.labelMedium)
-            }
-            if (listing.preferenceBoost != 0) {
+
+            listing.estimatedMargin?.let {
                 Text(
-                    "Preferenze personali: " +
-                        if (listing.preferenceBoost > 0) "+" + listing.preferenceBoost else listing.preferenceBoost.toString(),
+                    "Margine netto stimato: " +
+                        (if (it >= 0) "+" else "") +
+                        "%.2f".format(it) + " €",
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+
+            if (listing.shipping > 0) {
+                Text(
+                    "Spese considerate: €" + "%.2f".format(listing.shipping),
                     style = MaterialTheme.typography.labelMedium
                 )
             }
-            listing.condition?.let { Text("Condizione: " + it) }
-            if (listing.riskFlags.isNotEmpty()) {
-                Text("Attenzione: " + listing.riskFlags.joinToString())
+
+            if (listing.preferenceBoost != 0) {
+                Text(
+                    "Preferenze: " +
+                        if (listing.preferenceBoost > 0) "+" + listing.preferenceBoost
+                        else listing.preferenceBoost.toString(),
+                    style = MaterialTheme.typography.labelMedium
+                )
             }
+
+            listing.condition?.let { Text("Condizione: $it") }
+
+            if (listing.riskFlags.isNotEmpty()) {
+                Text(
+                    "Attenzione: " + listing.riskFlags.joinToString(),
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+
+            HorizontalDivider()
+
             Row(Modifier.fillMaxWidth()) {
                 TextButton(
-                    onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(listing.url))) },
+                    onClick = {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(listing.url)))
+                    },
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("APRI ANNUNCIO")
+                    Text("APRI")
                 }
                 IconButton(onClick = { onHistory(listing) }) {
                     Icon(Icons.Default.History, contentDescription = "Storico prezzi")
@@ -518,13 +819,17 @@ private fun ListingCard(
                 IconButton(onClick = { onNotInterested(listing) }) {
                     Icon(
                         Icons.Default.ThumbDown,
-                        contentDescription = "Non mi interessa"
+                        contentDescription = "Non mi interessa",
+                        tint = if (listing.feedback < 0) MaterialTheme.colorScheme.error
+                        else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 IconButton(onClick = { onFavorite(listing) }) {
                     Icon(
                         if (listing.favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                        contentDescription = if (listing.favorite) "Rimuovi dalla watchlist" else "Aggiungi alla watchlist"
+                        contentDescription = if (listing.favorite) "Rimuovi dalla watchlist" else "Aggiungi alla watchlist",
+                        tint = if (listing.favorite) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
@@ -555,11 +860,21 @@ private fun SharedImportDialog(
                     .heightIn(max = 480.dp)
                     .verticalScroll(rememberScrollState())
             ) {
-                Text("Controlla i dati ricevuti. Se lasci vuoto il valore di riferimento, Vinted Scanner proverà a stimarlo dai confronti locali.")
+                Text("Controlla i dati. Il valore di riferimento può essere lasciato vuoto.")
                 TextField(title, { title = it }, label = { Text("Titolo") }, modifier = Modifier.fillMaxWidth())
                 TextField(price, { price = it }, label = { Text("Prezzo €") }, modifier = Modifier.fillMaxWidth())
-                TextField(extraCosts, { extraCosts = it }, label = { Text("Spese extra € (opzionale)") }, modifier = Modifier.fillMaxWidth())
-                TextField(median, { median = it }, label = { Text("Valore di riferimento € (opzionale)") }, modifier = Modifier.fillMaxWidth())
+                TextField(
+                    extraCosts,
+                    { extraCosts = it },
+                    label = { Text("Spese extra € (opzionale)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                TextField(
+                    median,
+                    { median = it },
+                    label = { Text("Valore di riferimento € (opzionale)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
                 TextField(condition, { condition = it }, label = { Text("Condizione / note") }, modifier = Modifier.fillMaxWidth())
                 TextField(url, { url = it }, label = { Text("Link annuncio") }, modifier = Modifier.fillMaxWidth())
             }
@@ -590,27 +905,33 @@ private fun SharedImportDialog(
 @Composable
 private fun PriceHistoryDialog(
     title: String,
-    history: List<it.ge360.vintedscanner.model.PricePoint>,
+    history: List<PricePoint>,
     onDismiss: () -> Unit
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Storico · " + title) },
+        title = { Text("Storico · $title") },
         text = {
-            if (history.isEmpty()) {
-                Text("Nessuno storico disponibile.")
-            } else {
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.heightIn(max = 360.dp)
-                ) {
-                    items(history) { point ->
-                        Row(Modifier.fillMaxWidth()) {
-                            Text(
-                                formatDate(point.seenAt),
-                                modifier = Modifier.weight(1f)
-                            )
-                            Text("€" + "%.2f".format(point.price))
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.heightIn(max = 480.dp)
+            ) {
+                if (history.isEmpty()) {
+                    Text("Nessuno storico disponibile.")
+                } else {
+                    PriceHistoryChart(history)
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.heightIn(max = 240.dp)
+                    ) {
+                        items(history) { point ->
+                            Row(Modifier.fillMaxWidth()) {
+                                Text(formatDate(point.seenAt), modifier = Modifier.weight(1f))
+                                Text(
+                                    "€" + "%.2f".format(point.price),
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
                         }
                     }
                 }
@@ -623,19 +944,80 @@ private fun PriceHistoryDialog(
 }
 
 @Composable
+private fun PriceHistoryChart(history: List<PricePoint>) {
+    val ordered = history.sortedBy { it.seenAt }
+    val primary = MaterialTheme.colorScheme.primary
+    val grid = MaterialTheme.colorScheme.outlineVariant
+    val surface = MaterialTheme.colorScheme.surfaceVariant
+
+    Card(
+        Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = surface),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(170.dp)
+                .padding(14.dp)
+        ) {
+            if (ordered.isEmpty()) return@Canvas
+
+            val prices = ordered.map { it.price }
+            val minPrice = prices.minOrNull() ?: 0.0
+            val maxPrice = prices.maxOrNull() ?: minPrice
+            val range = max(1.0, maxPrice - minPrice)
+
+            drawLine(
+                color = grid,
+                start = Offset(0f, size.height / 2f),
+                end = Offset(size.width, size.height / 2f)
+            )
+
+            if (ordered.size == 1) {
+                drawCircle(
+                    color = primary,
+                    radius = 7f,
+                    center = Offset(size.width / 2f, size.height / 2f)
+                )
+                return@Canvas
+            }
+
+            val path = Path()
+            ordered.forEachIndexed { index, point ->
+                val x = (index.toFloat() / (ordered.lastIndex).toFloat()) * size.width
+                val normalized = ((point.price - minPrice) / range).toFloat()
+                val y = size.height - normalized * size.height
+
+                if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                drawCircle(primary, radius = 5f, center = Offset(x, y))
+            }
+
+            drawPath(path = path, color = primary)
+        }
+    }
+}
+
+@Composable
 private fun MetricCard(label: String, value: String, modifier: Modifier = Modifier) {
-    Card(modifier) {
-        Column(Modifier.padding(16.dp)) {
-            Text(value, style = MaterialTheme.typography.headlineMedium)
-            Text(label)
+    Card(
+        modifier,
+        shape = RoundedCornerShape(18.dp)
+    ) {
+        Column(Modifier.padding(15.dp)) {
+            Text(value, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+            Text(label, style = MaterialTheme.typography.bodyMedium)
         }
     }
 }
 
 @Composable
 private fun EmptyCard(text: String) {
-    Card(Modifier.fillMaxWidth()) {
-        Text(text, Modifier.padding(16.dp))
+    Card(
+        Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp)
+    ) {
+        Text(text, Modifier.padding(18.dp))
     }
 }
 
