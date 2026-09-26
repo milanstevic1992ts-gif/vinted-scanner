@@ -606,7 +606,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.
         val rejectedRatios = mutableListOf<Double>()
 
         readableDatabase.rawQuery(
-            "SELECT feedback_reason, price, market_median FROM listings WHERE feedback_reason != 'NONE'",
+            "SELECT feedback_reason, price, shipping, market_median FROM listings WHERE feedback_reason != 'NONE'",
             null
         ).use { c ->
             while (c.moveToNext()) {
@@ -618,9 +618,11 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.
                     FeedbackReason.DISCARDED -> discarded++
                     FeedbackReason.TOO_EXPENSIVE -> {
                         tooExpensive++
-                        if (!c.isNull(2)) {
-                            val median = c.getDouble(2)
-                            if (median > 0) rejectedRatios += c.getDouble(1) / median
+                        if (!c.isNull(3)) {
+                            val median = c.getDouble(3)
+                            if (median > 0) {
+                                rejectedRatios += (c.getDouble(1) + c.getDouble(2)) / median
+                            }
                         }
                     }
                     FeedbackReason.BAD_CONDITION -> badCondition++
