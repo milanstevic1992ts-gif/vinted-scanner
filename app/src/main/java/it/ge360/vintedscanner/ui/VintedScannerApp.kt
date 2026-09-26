@@ -425,7 +425,10 @@ private fun Dashboard(
                     )
                     if (learned.isEmpty() &&
                         state.preferenceProfile.purchasedCount == 0 &&
-                        state.preferenceProfile.discardedCount == 0
+                        state.preferenceProfile.discardedCount == 0 &&
+                        state.preferenceProfile.tooExpensiveCount == 0 &&
+                        state.preferenceProfile.badConditionCount == 0 &&
+                        state.preferenceProfile.wrongModelCount == 0
                     ) {
                         Text("Ancora neutrale. Usa i feedback motivati per far imparare l'app.")
                     } else {
