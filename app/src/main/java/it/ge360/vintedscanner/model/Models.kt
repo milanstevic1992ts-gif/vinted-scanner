@@ -5,6 +5,8 @@ data class SavedSearch(
     val query: String,
     val maxPrice: Double?,
     val size: String?,
+    val brand: String? = null,
+    val condition: String? = null,
     val minMargin: Double = 20.0,
     val active: Boolean = true,
     val createdAt: Long = System.currentTimeMillis()
@@ -23,13 +25,28 @@ data class Listing(
     val sellerRating: Double? = null,
     val publishedAt: Long? = null,
     val firstSeenAt: Long = System.currentTimeMillis(),
+    val lastSeenAt: Long = System.currentTimeMillis(),
     val score: Int = 0,
     val estimatedMargin: Double? = null,
-    val riskFlags: List<String> = emptyList()
+    val riskFlags: List<String> = emptyList(),
+    val favorite: Boolean = false
 )
 
 data class OpportunityScore(
     val score: Int,
     val estimatedMargin: Double?,
     val riskFlags: List<String>
+)
+
+data class PricePoint(
+    val listingId: String,
+    val price: Double,
+    val seenAt: Long
+)
+
+data class SharedListingDraft(
+    val rawText: String,
+    val url: String?,
+    val titleGuess: String,
+    val priceGuess: Double?
 )
