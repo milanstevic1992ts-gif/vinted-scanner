@@ -4,7 +4,7 @@ APK Android standalone per raccogliere annunci condivisi dal telefono, confronta
 
 ## Stato attuale
 
-Versione applicazione: **0.8.0**
+Versione applicazione: **0.9.0**
 
 ### Fase 1 — Fondazioni
 - [x] progetto Android nativo Kotlin + Jetpack Compose
@@ -125,6 +125,26 @@ Versione applicazione: **0.8.0**
 - [x] backup v2 con feedback corrente, profilo e storico eventi
 - [x] test apprendimento per motivo
 
+### Fase 9 — Test reale e calibrazione
+- [x] sessione calibrazione persistente
+- [x] obiettivo predefinito 25 annunci
+- [x] snapshot dei valori al momento del test
+- [x] giudizio firma prodotto corretta / errata
+- [x] giudizio stima prezzo corretta / alta / bassa / dati insufficienti
+- [x] giudizio ranking corretto / troppo alto / troppo basso
+- [x] valore realistico opzionale inseribile dall'utente
+- [x] note libere per annuncio
+- [x] percentuale accuratezza firma
+- [x] percentuale stime prezzo corrette
+- [x] percentuale ranking corretto
+- [x] errore prezzo medio assoluto quando è presente un valore realistico
+- [x] raccomandazioni automatiche dopo almeno 10 review
+- [x] report JSON di calibrazione esportabile
+- [x] migrazione SQLite v7
+- [x] test automatici analizzatore e report
+- [ ] eseguire fisicamente almeno 25 annunci reali sul telefono
+- [ ] ricalibrare soglie e pesi usando il report reale
+
 ## Come funziona l'Intelligence locale
 
 Vinted Scanner non inventa un prezzo "AI". Usa gli annunci presenti nel database locale:
@@ -145,7 +165,7 @@ Il cuore insegna un segnale positivo leggero. I feedback motivati insegnano inve
 
 Il core usa l'interfaccia `ListingSource`, quindi UI, archivio, Intelligence e notifiche non dipendono da uno specifico provider.
 
-Sorgenti presenti nella 0.8.0:
+Sorgenti presenti nella 0.9.0:
 - **Condivisione Android**: attiva e realmente utilizzabile;
 - **Sorgente remota autorizzata**: architettura pronta, ma intenzionalmente marcata `Non configurata` finché non viene collegato un accesso autorizzato reale.
 
@@ -163,6 +183,14 @@ Il progetto non include bypass di login, anti-bot, automazioni di acquisto o mec
 - compileSdk / targetSdk 37
 - Gradle 9.6
 - Compose BOM 2026.09.00
+
+## Calibrazione reale
+
+Dalla Home si può avviare una sessione da 25 annunci. Durante una sessione compare l'azione di calibrazione sulle card. Ogni review salva uno snapshot indipendente di firma prodotto, mediana osservata, confidenza, similarità, score, Indice Affare e margine stimato. In questo modo un aggiornamento successivo dell'algoritmo non modifica retroattivamente il test.
+
+Il report calcola accuratezza firma, qualità prezzo, qualità ranking ed errore percentuale del prezzo quando viene inserito un valore realistico. Prima di 10 review il sistema non propone modifiche alle soglie; dopo un campione sufficiente genera indicazioni diagnostiche, ma non cambia autonomamente il motore.
+
+Il test fisico dei 25 annunci resta intenzionalmente da eseguire sul dispositivo reale.
 
 ## Apprendimento avanzato
 
