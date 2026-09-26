@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.ThumbDown
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -76,10 +77,12 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import it.ge360.vintedscanner.domain.DealCandidate
 import it.ge360.vintedscanner.domain.DealRanker
+import it.ge360.vintedscanner.model.EstimateVerdict
 import it.ge360.vintedscanner.model.FeedbackReason
 import it.ge360.vintedscanner.model.Listing
 import it.ge360.vintedscanner.model.PreferenceProfile
 import it.ge360.vintedscanner.model.PricePoint
+import it.ge360.vintedscanner.model.RankingVerdict
 import it.ge360.vintedscanner.model.SavedSearch
 import it.ge360.vintedscanner.model.SharedListingDraft
 import it.ge360.vintedscanner.model.SourceDiagnostic
@@ -99,6 +102,14 @@ fun VintedScannerApp(viewModel: MainViewModel) {
     var createRequest by remember { mutableStateOf(false) }
     var sourceDialogOpen by remember { mutableStateOf(false) }
     var feedbackTarget by remember { mutableStateOf<Listing?>(null) }
+    var calibrationTarget by remember { mutableStateOf<Listing?>(null) }
+
+    val calibrateAction: ((Listing) -> Unit)? =
+        if (state.calibrationSession?.active == true) {
+            { listing -> calibrationTarget = listing }
+        } else {
+            null
+        }
 
     val backupPayload = state.backupPayload
     val backupLauncher = rememberLauncherForActivityResult(
@@ -114,10 +125,31 @@ fun VintedScannerApp(viewModel: MainViewModel) {
         viewModel.backupConsumed()
     }
 
+    val calibrationReportPayload = state.calibrationReportPayload
+    val calibrationReportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null && calibrationReportPayload != null) {
+            runCatching {
+                context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use {
+                    it.write(calibrationReportPayload)
+                }
+            }
+        }
+        viewModel.calibrationReportConsumed()
+    }
+
     LaunchedEffect(backupPayload) {
         if (backupPayload != null) {
             val stamp = SimpleDateFormat("yyyyMMdd-HHmm", Locale.US).format(Date())
             backupLauncher.launch("vinted-scanner-backup-$stamp.json")
+        }
+    }
+
+    LaunchedEffect(calibrationReportPayload) {
+        if (calibrationReportPayload != null) {
+            val stamp = SimpleDateFormat("yyyyMMdd-HHmm", Locale.US).format(Date())
+            calibrationReportLauncher.launch("vinted-scanner-calibration-$stamp.json")
         }
     }
 
@@ -144,6 +176,24 @@ fun VintedScannerApp(viewModel: MainViewModel) {
             onSelect = { reason ->
                 viewModel.setFeedback(listing, reason)
                 feedbackTarget = null
+            }
+        )
+    }
+
+    calibrationTarget?.let { listing ->
+        CalibrationReviewDialog(
+            listing = listing,
+            onDismiss = { calibrationTarget = null },
+            onSave = { signatureCorrect, estimateVerdict, rankingVerdict, expectedValue, notes ->
+                viewModel.saveCalibrationReview(
+                    listing = listing,
+                    signatureCorrect = signatureCorrect,
+                    estimateVerdict = estimateVerdict,
+                    rankingVerdict = rankingVerdict,
+                    expectedValue = expectedValue,
+                    notes = notes
+                )
+                calibrationTarget = null
             }
         )
     }
@@ -243,6 +293,10 @@ fun VintedScannerApp(viewModel: MainViewModel) {
                         onNotInterested = { feedbackTarget = it },
                         onLiveChange = viewModel::setLiveMode,
                         onBackup = viewModel::prepareBackup,
+                        onStartCalibration = viewModel::startCalibration,
+                        onCompleteCalibration = viewModel::completeCalibration,
+                        onExportCalibration = viewModel::prepareCalibrationReport,
+                        onCalibrate = calibrateAction,
                         onSources = {
                             viewModel.refreshSources()
                             sourceDialogOpen = true
@@ -260,20 +314,23 @@ fun VintedScannerApp(viewModel: MainViewModel) {
                         profile = state.preferenceProfile,
                         onFavorite = viewModel::toggleFavorite,
                         onHistory = viewModel::showHistory,
-                        onNotInterested = { feedbackTarget = it }
+                        onNotInterested = { feedbackTarget = it },
+                        onCalibrate = calibrateAction
                     )
                     3 -> ArchiveScreen(
                         listings = state.archive,
                         onFavorite = viewModel::toggleFavorite,
                         onHistory = viewModel::showHistory,
-                        onNotInterested = { feedbackTarget = it }
+                        onNotInterested = { feedbackTarget = it },
+                        onCalibrate = calibrateAction
                     )
                     else -> Opportunities(
                         listings = state.favorites,
                         emptyText = "La watchlist è vuota. Tocca il cuore su un annuncio.",
                         onFavorite = viewModel::toggleFavorite,
                         onHistory = viewModel::showHistory,
-                        onNotInterested = { feedbackTarget = it }
+                        onNotInterested = { feedbackTarget = it },
+                        onCalibrate = calibrateAction
                     )
                 }
             }
@@ -289,6 +346,10 @@ private fun Dashboard(
     onNotInterested: (Listing) -> Unit,
     onLiveChange: (Boolean) -> Unit,
     onBackup: () -> Unit,
+    onStartCalibration: () -> Unit,
+    onCompleteCalibration: () -> Unit,
+    onExportCalibration: () -> Unit,
+    onCalibrate: ((Listing) -> Unit)?,
     onSources: () -> Unit
 ) {
     LazyColumn(
@@ -500,6 +561,100 @@ private fun Dashboard(
         }
 
         item {
+            val session = state.calibrationSession
+            val summary = state.calibrationSummary
+            Card(
+                Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (session?.active == true)
+                        MaterialTheme.colorScheme.secondaryContainer
+                    else MaterialTheme.colorScheme.surface
+                ),
+                shape = RoundedCornerShape(20.dp)
+            ) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(16.dp)
+                ) {
+                    Text(
+                        "Calibrazione reale",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (session == null) {
+                        Text("Avvia una sessione da 25 annunci reali per misurare firma, prezzo e ranking.")
+                        Button(onClick = onStartCalibration, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Default.Tune, contentDescription = null)
+                            Spacer(Modifier.padding(4.dp))
+                            Text("AVVIA TEST 25 ANNUNCI")
+                        }
+                    } else {
+                        Text(
+                            (if (session.active) "Sessione attiva" else "Ultima sessione") +
+                                " · " + summary.reviewedCount + "/" + summary.targetCount
+                        )
+                        LinearProgressIndicator(
+                            progress = {
+                                (summary.reviewedCount.toFloat() / summary.targetCount.coerceAtLeast(1))
+                                    .coerceIn(0f, 1f)
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            MetricCard(
+                                "Firma",
+                                summary.signatureAccuracy?.let { "$it%" } ?: "—",
+                                Modifier.weight(1f)
+                            )
+                            MetricCard(
+                                "Prezzo",
+                                summary.priceGoodRate?.let { "$it%" } ?: "—",
+                                Modifier.weight(1f)
+                            )
+                            MetricCard(
+                                "Ranking",
+                                summary.rankingGoodRate?.let { "$it%" } ?: "—",
+                                Modifier.weight(1f)
+                            )
+                        }
+                        summary.meanAbsolutePriceErrorPct?.let {
+                            Text(
+                                "Errore prezzo medio assoluto: $it%",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                        summary.recommendations.take(3).forEach {
+                            Text("• $it", style = MaterialTheme.typography.bodySmall)
+                        }
+                        if (session.active) {
+                            Text(
+                                "Apri una card e usa l'icona calibrazione per registrare il giudizio.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            OutlinedButton(
+                                onClick = onCompleteCalibration,
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text("CHIUDI SESSIONE") }
+                        } else {
+                            Button(
+                                onClick = onStartCalibration,
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text("NUOVA SESSIONE") }
+                        }
+                        OutlinedButton(
+                            onClick = onExportCalibration,
+                            enabled = summary.reviewedCount > 0,
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("ESPORTA REPORT CALIBRAZIONE") }
+                    }
+                }
+            }
+        }
+
+        item {
             val readyCount = state.sourceDiagnostics.count { it.status == SourceStatus.READY }
             val errorCount = state.sourceDiagnostics.count { it.status == SourceStatus.ERROR }
             Card(
@@ -569,7 +724,7 @@ private fun Dashboard(
             }
         } else {
             items(state.opportunities.take(4), key = { it.id }) {
-                ListingCard(it, onFavorite, onHistory, onNotInterested)
+                ListingCard(it, onFavorite, onHistory, onNotInterested, onCalibrate = onCalibrate)
             }
         }
     }
@@ -771,7 +926,8 @@ private fun DealCenterScreen(
     profile: PreferenceProfile,
     onFavorite: (Listing) -> Unit,
     onHistory: (Listing) -> Unit,
-    onNotInterested: (Listing) -> Unit
+    onNotInterested: (Listing) -> Unit,
+    onCalibrate: ((Listing) -> Unit)? = null
 ) {
     var filter by remember { mutableIntStateOf(0) }
     var sort by remember { mutableIntStateOf(0) }
@@ -898,7 +1054,8 @@ private fun DealCenterScreen(
                     onFavorite = onFavorite,
                     onHistory = onHistory,
                     onNotInterested = onNotInterested,
-                    dealCandidate = candidate
+                    dealCandidate = candidate,
+                    onCalibrate = onCalibrate
                 )
             }
         }
@@ -922,7 +1079,7 @@ private fun Opportunities(
             item { EmptyCard(emptyText) }
         } else {
             items(listings, key = { it.id }) {
-                ListingCard(it, onFavorite, onHistory, onNotInterested)
+                ListingCard(it, onFavorite, onHistory, onNotInterested, onCalibrate = onCalibrate)
             }
         }
     }
@@ -993,7 +1150,7 @@ private fun ArchiveScreen(
             item { EmptyCard("Nessun annuncio in questa sezione.") }
         } else {
             items(filtered, key = { it.id }) {
-                ListingCard(it, onFavorite, onHistory, onNotInterested)
+                ListingCard(it, onFavorite, onHistory, onNotInterested, onCalibrate = onCalibrate)
             }
         }
     }
@@ -1005,7 +1162,8 @@ private fun ListingCard(
     onFavorite: (Listing) -> Unit,
     onHistory: (Listing) -> Unit,
     onNotInterested: (Listing) -> Unit,
-    dealCandidate: DealCandidate? = null
+    dealCandidate: DealCandidate? = null,
+    onCalibrate: ((Listing) -> Unit)? = null
 ) {
     val context = LocalContext.current
 
@@ -1178,6 +1336,11 @@ private fun ListingCard(
                 IconButton(onClick = { onHistory(listing) }) {
                     Icon(Icons.Default.History, contentDescription = "Storico prezzi")
                 }
+                onCalibrate?.let {
+                    IconButton(onClick = { it(listing) }) {
+                        Icon(Icons.Default.Tune, contentDescription = "Calibra annuncio")
+                    }
+                }
                 IconButton(onClick = { onNotInterested(listing) }) {
                     Icon(
                         Icons.Default.ThumbDown,
@@ -1197,6 +1360,135 @@ private fun ListingCard(
             }
         }
     }
+}
+
+@Composable
+private fun CalibrationReviewDialog(
+    listing: Listing,
+    onDismiss: () -> Unit,
+    onSave: (Boolean, EstimateVerdict, RankingVerdict, Double?, String?) -> Unit
+) {
+    var signatureCorrect by remember(listing.id) { mutableStateOf(true) }
+    var estimateVerdict by remember(listing.id) {
+        mutableStateOf(
+            if (listing.marketMedian == null) EstimateVerdict.NO_DATA else EstimateVerdict.GOOD
+        )
+    }
+    var rankingVerdict by remember(listing.id) { mutableStateOf(RankingVerdict.GOOD) }
+    var expectedValue by remember(listing.id) { mutableStateOf("") }
+    var notes by remember(listing.id) { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Calibra annuncio") },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier
+                    .heightIn(max = 520.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Text(listing.title, fontWeight = FontWeight.Bold)
+                Text(
+                    "Firma attuale: " + (listing.comparableLabel ?: "—"),
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Text(
+                    "Valore osservato: " +
+                        (listing.marketMedian?.let { "€" + "%.2f".format(it) } ?: "nessun dato") +
+                        " · confidenza " + listing.marketConfidence + "%",
+                    style = MaterialTheme.typography.bodySmall
+                )
+
+                Text("Firma prodotto corretta?", fontWeight = FontWeight.SemiBold)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = signatureCorrect,
+                        onClick = { signatureCorrect = true },
+                        label = { Text("Sì") }
+                    )
+                    FilterChip(
+                        selected = !signatureCorrect,
+                        onClick = { signatureCorrect = false },
+                        label = { Text("No") }
+                    )
+                }
+
+                Text("Stima prezzo", fontWeight = FontWeight.SemiBold)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FilterChip(
+                        selected = estimateVerdict == EstimateVerdict.GOOD,
+                        onClick = { estimateVerdict = EstimateVerdict.GOOD },
+                        label = { Text("Corretta") }
+                    )
+                    FilterChip(
+                        selected = estimateVerdict == EstimateVerdict.TOO_HIGH,
+                        onClick = { estimateVerdict = EstimateVerdict.TOO_HIGH },
+                        label = { Text("Alta") }
+                    )
+                    FilterChip(
+                        selected = estimateVerdict == EstimateVerdict.TOO_LOW,
+                        onClick = { estimateVerdict = EstimateVerdict.TOO_LOW },
+                        label = { Text("Bassa") }
+                    )
+                }
+                FilterChip(
+                    selected = estimateVerdict == EstimateVerdict.NO_DATA,
+                    onClick = { estimateVerdict = EstimateVerdict.NO_DATA },
+                    label = { Text("Dati insufficienti") }
+                )
+
+                TextField(
+                    value = expectedValue,
+                    onValueChange = { expectedValue = it },
+                    label = { Text("Valore realistico € (opzionale)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Text("Ranking Centro Affari", fontWeight = FontWeight.SemiBold)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FilterChip(
+                        selected = rankingVerdict == RankingVerdict.GOOD,
+                        onClick = { rankingVerdict = RankingVerdict.GOOD },
+                        label = { Text("Corretto") }
+                    )
+                    FilterChip(
+                        selected = rankingVerdict == RankingVerdict.TOO_HIGH,
+                        onClick = { rankingVerdict = RankingVerdict.TOO_HIGH },
+                        label = { Text("Troppo alto") }
+                    )
+                }
+                FilterChip(
+                    selected = rankingVerdict == RankingVerdict.TOO_LOW,
+                    onClick = { rankingVerdict = RankingVerdict.TOO_LOW },
+                    label = { Text("Troppo basso") }
+                )
+
+                TextField(
+                    value = notes,
+                    onValueChange = { notes = it },
+                    label = { Text("Note (opzionale)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onSave(
+                        signatureCorrect,
+                        estimateVerdict,
+                        rankingVerdict,
+                        expectedValue.toDecimalOrNull(),
+                        notes.takeIf(String::isNotBlank)
+                    )
+                }
+            ) { Text("SALVA TEST") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("ANNULLA") }
+        }
+    )
 }
 
 @Composable
