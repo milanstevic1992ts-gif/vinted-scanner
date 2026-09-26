@@ -54,8 +54,8 @@ object ProductSignatureExtractor {
     private val categoryKeywords = linkedMapOf(
         "footwear" to setOf(
             "scarpe", "scarpa", "sneaker", "sneakers", "trainer", "trainers",
-            "stivali", "stivale", "sandali", "sandalo", "airmax", "air", "dunk",
-            "samba", "gazelle", "jordan", "yeezy"
+            "stivali", "stivale", "sandali", "sandalo", "dunk",
+            "samba", "gazelle", "yeezy", "trainer", "trainers"
         ),
         "outerwear" to setOf(
             "giacca", "giubbotto", "cappotto", "parka", "piumino", "jacket", "coat"
@@ -107,9 +107,15 @@ object ProductSignatureExtractor {
             .filterNot { it == "taglia" || it == "size" || it == "tg" }
             .toSet()
 
-        val category = categoryKeywords.entries.firstOrNull { (_, keywords) ->
-            rawTokens.any { token -> token in keywords }
-        }?.key
+        val category = when {
+            normalized.contains("air max") ||
+                normalized.contains("air force") ||
+                normalized.contains("new balance") && rawTokens.any { it.matches(Regex("[0-9]{3,4}")) } ->
+                "footwear"
+            else -> categoryKeywords.entries.firstOrNull { (_, keywords) ->
+                rawTokens.any { token -> token in keywords }
+            }?.key
+        }
 
         val conditionRank = conditionRank(fullText)
 
