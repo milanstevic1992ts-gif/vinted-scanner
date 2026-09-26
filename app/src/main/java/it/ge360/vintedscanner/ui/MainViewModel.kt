@@ -8,6 +8,8 @@ import androidx.lifecycle.viewModelScope
 import it.ge360.vintedscanner.VintedScannerApplication
 import it.ge360.vintedscanner.data.SharedListingParser
 import it.ge360.vintedscanner.live.LiveScannerService
+import it.ge360.vintedscanner.model.FeedbackEvent
+import it.ge360.vintedscanner.model.FeedbackReason
 import it.ge360.vintedscanner.model.Listing
 import it.ge360.vintedscanner.model.PreferenceProfile
 import it.ge360.vintedscanner.model.PricePoint
@@ -31,7 +33,8 @@ data class ScannerUiState(
     val loading: Boolean = false,
     val liveMode: Boolean = false,
     val backupPayload: String? = null,
-    val sourceDiagnostics: List<SourceDiagnostic> = emptyList()
+    val sourceDiagnostics: List<SourceDiagnostic> = emptyList(),
+    val feedbackEvents: List<FeedbackEvent> = emptyList()
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -56,6 +59,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val archive = repository.archive()
             val preferenceProfile = repository.preferenceProfile()
             val sourceDiagnostics = repository.sourceDiagnostics()
+            val feedbackEvents = repository.feedbackEvents()
             _state.value = _state.value.copy(
                 searches = searches,
                 opportunities = opportunities,
@@ -63,6 +67,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 archive = archive,
                 preferenceProfile = preferenceProfile,
                 sourceDiagnostics = sourceDiagnostics,
+                feedbackEvents = feedbackEvents,
                 loading = false
             )
         }
@@ -118,8 +123,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun notInterested(listing: Listing) {
+        setFeedback(listing, FeedbackReason.DISCARDED)
+    }
+
+    fun setFeedback(listing: Listing, reason: FeedbackReason) {
         viewModelScope.launch {
-            repository.setNotInterested(listing.id)
+            repository.setFeedback(listing.id, reason)
             refresh()
         }
     }
