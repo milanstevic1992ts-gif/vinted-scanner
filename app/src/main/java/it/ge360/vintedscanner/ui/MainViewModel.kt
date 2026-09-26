@@ -4,8 +4,11 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import it.ge360.vintedscanner.VintedScannerApplication
+import it.ge360.vintedscanner.data.SharedListingParser
 import it.ge360.vintedscanner.model.Listing
+import it.ge360.vintedscanner.model.PricePoint
 import it.ge360.vintedscanner.model.SavedSearch
+import it.ge360.vintedscanner.model.SharedListingDraft
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -14,11 +17,16 @@ import kotlinx.coroutines.launch
 data class ScannerUiState(
     val searches: List<SavedSearch> = emptyList(),
     val opportunities: List<Listing> = emptyList(),
+    val favorites: List<Listing> = emptyList(),
+    val sharedDraft: SharedListingDraft? = null,
+    val priceHistory: List<PricePoint> = emptyList(),
+    val historyTitle: String? = null,
     val loading: Boolean = false
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
-    private val repository = (application as VintedScannerApplication).repository
+    private val app = application as VintedScannerApplication
+    private val repository = app.repository
     private val _state = MutableStateFlow(ScannerUiState())
     val state: StateFlow<ScannerUiState> = _state.asStateFlow()
 
@@ -26,25 +34,108 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun refresh() {
         viewModelScope.launch {
-            _state.value = _state.value.copy(loading = true)
-            _state.value = ScannerUiState(
+            val current = _state.value
+            _state.value = current.copy(loading = true)
+            _state.value = current.copy(
                 searches = repository.searches(),
-                opportunities = repository.opportunities()
+                opportunities = repository.opportunities(),
+                favorites = repository.favorites(),
+                loading = false
             )
         }
     }
 
-    fun addSearch(query: String, maxPrice: Double?, size: String?, minMargin: Double?) {
+    fun saveSearch(
+        existing: SavedSearch?,
+        query: String,
+        maxPrice: Double?,
+        size: String?,
+        brand: String?,
+        condition: String?,
+        minMargin: Double?
+    ) {
         if (query.isBlank()) return
         viewModelScope.launch {
-            repository.addSearch(
+            repository.saveSearch(
                 SavedSearch(
+                    id = existing?.id ?: 0,
                     query = query.trim(),
                     maxPrice = maxPrice,
                     size = size?.trim()?.takeIf(String::isNotBlank),
-                    minMargin = minMargin ?: 20.0
+                    brand = brand?.trim()?.takeIf(String::isNotBlank),
+                    condition = condition?.trim()?.takeIf(String::isNotBlank),
+                    minMargin = minMargin ?: 20.0,
+                    active = existing?.active ?: true,
+                    createdAt = existing?.createdAt ?: System.currentTimeMillis()
                 )
             )
+            refresh()
+        }
+    }
+
+    fun deleteSearch(id: Long) {
+        viewModelScope.launch {
+            repository.deleteSearch(id)
+            refresh()
+        }
+    }
+
+    fun toggleSearch(search: SavedSearch) {
+        viewModelScope.launch {
+            repository.setSearchActive(search.id, !search.active)
+            refresh()
+        }
+    }
+
+    fun toggleFavorite(listing: Listing) {
+        viewModelScope.launch {
+            repository.setFavorite(listing.id, !listing.favorite)
+            refresh()
+        }
+    }
+
+    fun showHistory(listing: Listing) {
+        viewModelScope.launch {
+            _state.value = _state.value.copy(
+                priceHistory = repository.priceHistory(listing.id),
+                historyTitle = listing.title
+            )
+        }
+    }
+
+    fun closeHistory() {
+        _state.value = _state.value.copy(priceHistory = emptyList(), historyTitle = null)
+    }
+
+    fun onSharedText(text: String?) {
+        if (text.isNullOrBlank()) return
+        _state.value = _state.value.copy(sharedDraft = SharedListingParser.parse(text))
+    }
+
+    fun dismissSharedDraft() {
+        _state.value = _state.value.copy(sharedDraft = null)
+    }
+
+    fun importSharedListing(
+        title: String,
+        price: Double?,
+        marketMedian: Double?,
+        url: String,
+        condition: String?
+    ) {
+        if (price == null || price < 0 || url.isBlank()) return
+        viewModelScope.launch {
+            val (listing, isNew) = repository.importSharedListing(
+                title = title,
+                price = price,
+                marketMedian = marketMedian,
+                url = url,
+                condition = condition
+            )
+            if (isNew && listing.score >= 75 && (listing.estimatedMargin ?: 0.0) > 0) {
+                app.notificationHelper.notifyOpportunity(listing)
+            }
+            _state.value = _state.value.copy(sharedDraft = null)
             refresh()
         }
     }
@@ -52,7 +143,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun scanNow() {
         viewModelScope.launch {
             _state.value = _state.value.copy(loading = true)
-            repository.scanActive()
+            val outcome = repository.scanActive()
+            outcome.newOpportunities.forEach(app.notificationHelper::notifyOpportunity)
             refresh()
         }
     }
