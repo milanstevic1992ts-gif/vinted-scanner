@@ -34,12 +34,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun refresh() {
         viewModelScope.launch {
-            val current = _state.value
-            _state.value = current.copy(loading = true)
-            _state.value = current.copy(
-                searches = repository.searches(),
-                opportunities = repository.opportunities(),
-                favorites = repository.favorites(),
+            _state.value = _state.value.copy(loading = true)
+            val searches = repository.searches()
+            val opportunities = repository.opportunities()
+            val favorites = repository.favorites()
+            _state.value = _state.value.copy(
+                searches = searches,
+                opportunities = opportunities,
+                favorites = favorites,
                 loading = false
             )
         }
