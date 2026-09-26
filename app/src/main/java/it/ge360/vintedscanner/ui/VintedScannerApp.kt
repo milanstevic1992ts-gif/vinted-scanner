@@ -2,6 +2,7 @@ package it.ge360.vintedscanner.ui
 
 import android.content.Intent
 import android.net.Uri
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
@@ -103,6 +104,13 @@ fun VintedScannerApp(viewModel: MainViewModel) {
     var sourceDialogOpen by remember { mutableStateOf(false) }
     var feedbackTarget by remember { mutableStateOf<Listing?>(null) }
     var calibrationTarget by remember { mutableStateOf<Listing?>(null) }
+
+    val automaticSourceReady = state.sourceDiagnostics.any {
+        it.enabled &&
+            it.status == SourceStatus.READY &&
+            it.descriptor.kind != SourceKind.MANUAL_SHARE
+    }
+    val liveOperational = state.liveMode && automaticSourceReady
 
     val calibrateAction: ((Listing) -> Unit)? =
         if (state.calibrationSession?.active == true) {
@@ -214,10 +222,17 @@ fun VintedScannerApp(viewModel: MainViewModel) {
                     Column {
                         Text("Vinted Scanner", fontWeight = FontWeight.Bold)
                         Text(
-                            if (state.liveMode) "LIVE ATTIVO" else "Scanner locale",
+                            when {
+                                liveOperational -> "LIVE OPERATIVO"
+                                state.liveMode -> "LIVE SENZA SORGENTE"
+                                else -> "Scanner locale"
+                            },
                             style = MaterialTheme.typography.labelMedium,
-                            color = if (state.liveMode) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurfaceVariant
+                            color = when {
+                                liveOperational -> MaterialTheme.colorScheme.primary
+                                state.liveMode -> MaterialTheme.colorScheme.error
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                            }
                         )
                     }
                 },
@@ -376,23 +391,43 @@ private fun Dashboard(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        if (state.liveMode)
-                            "Modalità Live attiva: il telefono mantiene il monitoraggio con notifica persistente."
-                        else
-                            "Attiva Live quando vuoi controlli frequenti anche lasciando l'app in background."
+                        when {
+                            state.liveMode && state.sourceDiagnostics.any {
+                                it.enabled &&
+                                    it.status == SourceStatus.READY &&
+                                    it.descriptor.kind != SourceKind.MANUAL_SHARE
+                            } -> "Live operativo: almeno una sorgente automatica è pronta."
+                            state.liveMode -> "Live acceso, ma nessuna sorgente automatica è pronta. Apri Diagnostica sorgenti."
+                            else -> "Attiva Live dopo aver configurato almeno una sorgente automatica."
+                        }
                     )
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(Modifier.weight(1f)) {
+                            val automaticReady = state.sourceDiagnostics.any {
+                                it.enabled &&
+                                    it.status == SourceStatus.READY &&
+                                    it.descriptor.kind != SourceKind.MANUAL_SHARE
+                            }
                             Text(
-                                if (state.liveMode) "LIVE ATTIVO" else "LIVE SPENTO",
+                                when {
+                                    state.liveMode && automaticReady -> "LIVE OPERATIVO"
+                                    state.liveMode -> "LIVE SENZA SORGENTE"
+                                    else -> "LIVE SPENTO"
+                                },
                                 style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.primary
+                                color = if (state.liveMode && !automaticReady)
+                                    MaterialTheme.colorScheme.error
+                                else MaterialTheme.colorScheme.primary
                             )
                             Text(
-                                if (state.liveMode) "Controllo ogni 60 s" else "Modalità standard",
+                                when {
+                                    state.liveMode && automaticReady -> "Notifiche/eventi automatici attivi"
+                                    state.liveMode -> "Configura una sorgente automatica"
+                                    else -> "Modalità standard"
+                                },
                                 style = MaterialTheme.typography.bodySmall
                             )
                         }
@@ -1562,6 +1597,8 @@ private fun SourceDiagnosticsDialog(
     onRefresh: () -> Unit,
     onEnabledChange: (String, Boolean) -> Unit
 ) {
+    val context = LocalContext.current
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Diagnostica sorgenti") },
@@ -1595,7 +1632,10 @@ private fun SourceDiagnosticsDialog(
                                             style = MaterialTheme.typography.labelMedium
                                         )
                                     }
-                                    if (source.descriptor.supportsAutomaticScan) {
+                                    if (
+                                        source.descriptor.supportsAutomaticScan &&
+                                        source.status != SourceStatus.NOT_CONFIGURED
+                                    ) {
                                         Switch(
                                             checked = source.enabled,
                                             onCheckedChange = {
@@ -1611,13 +1651,35 @@ private fun SourceDiagnosticsDialog(
                                     fontWeight = FontWeight.SemiBold
                                 )
 
-                                if (source.descriptor.requiresConfiguration &&
+                                if (
+                                    source.descriptor.requiresConfiguration &&
                                     source.status == SourceStatus.NOT_CONFIGURED
                                 ) {
-                                    Text(
-                                        "Richiede un connettore autorizzato prima di poter scaricare annunci automaticamente.",
-                                        style = MaterialTheme.typography.bodySmall
-                                    )
+                                    when (source.descriptor.kind) {
+                                        SourceKind.VINTED_NOTIFICATIONS -> {
+                                            Text(
+                                                "Serve il permesso Android di accesso alle notifiche. Vinted Scanner filtrerà solo le notifiche dell'app Vinted.",
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                            Button(
+                                                onClick = {
+                                                    context.startActivity(
+                                                        Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                                                    )
+                                                },
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                Text("ABILITA ACCESSO NOTIFICHE")
+                                            }
+                                        }
+                                        SourceKind.AUTHORIZED_REMOTE -> {
+                                            Text(
+                                                "Richiede un accesso API Vinted ufficiale/autorizzato. Nessuna credenziale è configurata.",
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                        }
+                                        SourceKind.MANUAL_SHARE -> Unit
+                                    }
                                 }
 
                                 Text(
@@ -1637,6 +1699,14 @@ private fun SourceDiagnosticsDialog(
                                         " · Totale ricevuti: " + source.totalReceived,
                                     style = MaterialTheme.typography.bodySmall
                                 )
+
+                                source.lastDetail?.takeIf { it.isNotBlank() }?.let {
+                                    Text(
+                                        "Dettaglio: $it",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
 
                                 source.lastError?.takeIf { it.isNotBlank() }?.let {
                                     Text(
@@ -1886,6 +1956,7 @@ private fun feedbackReasonLabel(reason: FeedbackReason): String =
 private fun sourceKindLabel(kind: SourceKind): String =
     when (kind) {
         SourceKind.MANUAL_SHARE -> "Ingresso manuale Android"
+        SourceKind.VINTED_NOTIFICATIONS -> "Listener notifiche automatico"
         SourceKind.AUTHORIZED_REMOTE -> "Connettore remoto autorizzato"
     }
 
