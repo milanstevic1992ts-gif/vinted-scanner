@@ -820,13 +820,29 @@ private fun ListingCard(
                 fontWeight = FontWeight.Bold
             )
 
+            listing.comparableLabel?.takeIf { it.isNotBlank() }?.let {
+                Text(
+                    "Firma comparabile: $it",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
             listing.marketMedian?.let {
                 Text("Valore osservato: €" + "%.2f".format(it))
                 Text(
                     "Confronti " + listing.marketSampleCount +
+                        " · similarità " + listing.marketSimilarity + "%" +
                         " · confidenza " + listing.marketConfidence + "%",
                     style = MaterialTheme.typography.labelMedium
                 )
+                if (listing.marketOutliersRemoved > 0) {
+                    Text(
+                        "Prezzi anomali esclusi: " + listing.marketOutliersRemoved,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 LinearProgressIndicator(
                     progress = { listing.marketConfidence / 100f },
                     modifier = Modifier.fillMaxWidth()
