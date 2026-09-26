@@ -73,6 +73,7 @@ class ScannerRepository(
     suspend fun importSharedListing(
         title: String,
         price: Double,
+        extraCosts: Double,
         marketMedian: Double?,
         url: String,
         condition: String?
@@ -82,6 +83,7 @@ class ScannerRepository(
             searchId = 0,
             title = title.trim().ifBlank { "Annuncio condiviso" },
             price = price,
+            shipping = extraCosts.coerceAtLeast(0.0),
             marketMedian = marketMedian,
             marketSampleCount = if (marketMedian != null) 1 else 0,
             marketConfidence = if (marketMedian != null) 25 else 0,
