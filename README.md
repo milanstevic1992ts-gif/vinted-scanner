@@ -4,7 +4,7 @@ APK Android standalone per raccogliere annunci condivisi dal telefono, confronta
 
 ## Stato attuale
 
-Versione applicazione: **0.7.0**
+Versione applicazione: **0.8.0**
 
 ### Fase 1 — Fondazioni
 - [x] progetto Android nativo Kotlin + Jetpack Compose
@@ -101,6 +101,30 @@ Versione applicazione: **0.7.0**
 - [x] ordinamento per Più recenti
 - [x] test ranking / rischio / freschezza / feedback
 
+### Fase 8 — Apprendimento avanzato
+- [x] feedback motivati per annuncio
+- [x] Comprato
+- [x] Scartato
+- [x] Troppo caro
+- [x] Condizioni pessime
+- [x] Modello sbagliato
+- [x] azzeramento feedback
+- [x] storico feedback persistente
+- [x] migrazione SQLite v6
+- [x] Comprato rafforza marca/modello più del semplice preferito
+- [x] Modello sbagliato penalizza fortemente i token prodotto
+- [x] Troppo caro non penalizza marca/modello
+- [x] Condizioni pessime non penalizza marca/modello
+- [x] soglia prezzo appresa dai rifiuti Troppo caro
+- [x] maggiore sensibilità ai rischi dopo ripetuti feedback Condizioni pessime
+- [x] motivazioni apprese visibili nel Centro Affari
+- [x] Comprato spostato fuori dalle occasioni attive
+- [x] filtri Archivio Comprati / Troppo cari
+- [x] riepilogo apprendimento in Home
+- [x] feedback recenti in Home
+- [x] backup v2 con feedback corrente, profilo e storico eventi
+- [x] test apprendimento per motivo
+
 ## Come funziona l'Intelligence locale
 
 Vinted Scanner non inventa un prezzo "AI". Usa gli annunci presenti nel database locale:
@@ -115,13 +139,13 @@ Vinted Scanner non inventa un prezzo "AI". Usa gli annunci presenti nel database
 8. sottrae prezzo di acquisto e spese extra;
 9. applica rischi testuali e preferenze personali allo score.
 
-Il cuore insegna un segnale positivo. **Non mi interessa** insegna un segnale negativo. I pesi restano nel database locale del telefono.
+Il cuore insegna un segnale positivo leggero. I feedback motivati insegnano invece in modo differenziato: **Comprato** rafforza il prodotto, **Modello sbagliato** lo penalizza, mentre **Troppo caro** e **Condizioni pessime** aggiornano sensibilità specifiche senza insegnare che la marca o il modello non piacciono. I dati restano nel database locale del telefono.
 
 ## Sorgenti annunci
 
 Il core usa l'interfaccia `ListingSource`, quindi UI, archivio, Intelligence e notifiche non dipendono da uno specifico provider.
 
-Sorgenti presenti nella 0.5.0:
+Sorgenti presenti nella 0.8.0:
 - **Condivisione Android**: attiva e realmente utilizzabile;
 - **Sorgente remota autorizzata**: architettura pronta, ma intenzionalmente marcata `Non configurata` finché non viene collegato un accesso autorizzato reale.
 
@@ -139,6 +163,10 @@ Il progetto non include bypass di login, anti-bot, automazioni di acquisto o mec
 - compileSdk / targetSdk 37
 - Gradle 9.6
 - Compose BOM 2026.09.00
+
+## Apprendimento avanzato
+
+Il profilo locale conserva sia pesi prodotto sia segnali comportamentali. Dopo almeno due feedback `Troppo caro`, il Centro Affari può penalizzare annunci con un rapporto costo/valore osservato simile o superiore alla soglia che l'utente ha già rifiutato. Dopo ripetuti feedback `Condizioni pessime`, i segnali di rischio pesano maggiormente nel ranking. Le penalità apprese vengono mostrate tra le motivazioni dell'Indice Affare.
 
 ## Centro Affari
 
