@@ -8,10 +8,14 @@ import androidx.lifecycle.viewModelScope
 import it.ge360.vintedscanner.VintedScannerApplication
 import it.ge360.vintedscanner.data.SharedListingParser
 import it.ge360.vintedscanner.live.LiveScannerService
+import it.ge360.vintedscanner.model.CalibrationSession
+import it.ge360.vintedscanner.model.CalibrationSummary
+import it.ge360.vintedscanner.model.EstimateVerdict
 import it.ge360.vintedscanner.model.FeedbackEvent
 import it.ge360.vintedscanner.model.FeedbackReason
 import it.ge360.vintedscanner.model.Listing
 import it.ge360.vintedscanner.model.PreferenceProfile
+import it.ge360.vintedscanner.model.RankingVerdict
 import it.ge360.vintedscanner.model.PricePoint
 import it.ge360.vintedscanner.model.SavedSearch
 import it.ge360.vintedscanner.model.SharedListingDraft
@@ -34,7 +38,10 @@ data class ScannerUiState(
     val liveMode: Boolean = false,
     val backupPayload: String? = null,
     val sourceDiagnostics: List<SourceDiagnostic> = emptyList(),
-    val feedbackEvents: List<FeedbackEvent> = emptyList()
+    val feedbackEvents: List<FeedbackEvent> = emptyList(),
+    val calibrationSession: CalibrationSession? = null,
+    val calibrationSummary: CalibrationSummary = CalibrationSummary(sessionId = null),
+    val calibrationReportPayload: String? = null
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -60,6 +67,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val preferenceProfile = repository.preferenceProfile()
             val sourceDiagnostics = repository.sourceDiagnostics()
             val feedbackEvents = repository.feedbackEvents()
+            val calibrationSession = repository.calibrationSession()
+            val calibrationSummary = repository.calibrationSummary()
             _state.value = _state.value.copy(
                 searches = searches,
                 opportunities = opportunities,
@@ -68,6 +77,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 preferenceProfile = preferenceProfile,
                 sourceDiagnostics = sourceDiagnostics,
                 feedbackEvents = feedbackEvents,
+                calibrationSession = calibrationSession,
+                calibrationSummary = calibrationSummary,
                 loading = false
             )
         }
@@ -225,5 +236,52 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 sourceDiagnostics = repository.setSourceEnabled(sourceId, enabled)
             )
         }
+    }
+
+    fun startCalibration() {
+        viewModelScope.launch {
+            repository.startCalibration(25)
+            refresh()
+        }
+    }
+
+    fun completeCalibration() {
+        viewModelScope.launch {
+            repository.completeCalibration()
+            refresh()
+        }
+    }
+
+    fun saveCalibrationReview(
+        listing: Listing,
+        signatureCorrect: Boolean,
+        estimateVerdict: EstimateVerdict,
+        rankingVerdict: RankingVerdict,
+        expectedValue: Double?,
+        notes: String?
+    ) {
+        viewModelScope.launch {
+            repository.saveCalibrationReview(
+                listingId = listing.id,
+                signatureCorrect = signatureCorrect,
+                estimateVerdict = estimateVerdict,
+                rankingVerdict = rankingVerdict,
+                expectedValue = expectedValue,
+                notes = notes
+            )
+            refresh()
+        }
+    }
+
+    fun prepareCalibrationReport() {
+        viewModelScope.launch {
+            _state.value = _state.value.copy(
+                calibrationReportPayload = repository.calibrationReportJson()
+            )
+        }
+    }
+
+    fun calibrationReportConsumed() {
+        _state.value = _state.value.copy(calibrationReportPayload = null)
     }
 }
