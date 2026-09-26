@@ -1,7 +1,10 @@
 package it.ge360.vintedscanner.data
 
+import it.ge360.vintedscanner.domain.MarketEstimator
 import it.ge360.vintedscanner.domain.OpportunityScorer
+import it.ge360.vintedscanner.domain.PreferenceEngine
 import it.ge360.vintedscanner.model.Listing
+import it.ge360.vintedscanner.model.PreferenceProfile
 import it.ge360.vintedscanner.model.PricePoint
 import it.ge360.vintedscanner.model.SavedSearch
 import kotlinx.coroutines.Dispatchers
@@ -41,6 +44,7 @@ class ScannerRepository(
     }
 
     suspend fun opportunities(): List<Listing> = withContext(Dispatchers.IO) {
+        recomputeIntelligence()
         database.getTopListings()
     }
 
@@ -48,8 +52,18 @@ class ScannerRepository(
         database.getTopListings(favoritesOnly = true)
     }
 
+    suspend fun preferenceProfile(): PreferenceProfile = withContext(Dispatchers.IO) {
+        database.getPreferenceProfile()
+    }
+
     suspend fun setFavorite(listingId: String, favorite: Boolean) = withContext(Dispatchers.IO) {
         database.setFavorite(listingId, favorite)
+        recomputeIntelligence()
+    }
+
+    suspend fun setNotInterested(listingId: String) = withContext(Dispatchers.IO) {
+        database.setNotInterested(listingId)
+        recomputeIntelligence()
     }
 
     suspend fun priceHistory(listingId: String): List<PricePoint> = withContext(Dispatchers.IO) {
@@ -69,22 +83,29 @@ class ScannerRepository(
             title = title.trim().ifBlank { "Annuncio condiviso" },
             price = price,
             marketMedian = marketMedian,
+            marketSampleCount = if (marketMedian != null) 1 else 0,
+            marketConfidence = if (marketMedian != null) 25 else 0,
             url = url.trim(),
             condition = condition?.trim()?.takeIf(String::isNotBlank)
         )
-        val score = OpportunityScorer.score(raw)
-        val scored = raw.copy(
-            score = score.score,
-            estimatedMargin = score.estimatedMargin,
-            riskFlags = score.riskFlags
+
+        val initialScore = OpportunityScorer.score(raw)
+        val initial = raw.copy(
+            score = initialScore.score,
+            estimatedMargin = initialScore.estimatedMargin,
+            preferenceBoost = initialScore.preferenceBoost,
+            riskFlags = initialScore.riskFlags
         )
-        val isNew = database.upsertListing(scored)
-        scored to isNew
+
+        val isNew = database.upsertListing(initial)
+        recomputeIntelligence()
+
+        (database.getListing(initial.id) ?: initial) to isNew
     }
 
     suspend fun scanActive(): ScanOutcome = withContext(Dispatchers.IO) {
         var scanned = 0
-        val newOpportunities = mutableListOf<Listing>()
+        val newIds = linkedSetOf<String>()
 
         database.getSearches()
             .filter { it.active }
@@ -103,21 +124,59 @@ class ScannerRepository(
                     }
                     .forEach { raw ->
                         scanned++
-                        val result = OpportunityScorer.score(raw)
-                        val scored = raw.copy(
-                            searchId = search.id,
+                        val prepared = raw.copy(searchId = search.id)
+                        val result = OpportunityScorer.score(prepared)
+                        val scored = prepared.copy(
                             score = result.score,
                             estimatedMargin = result.estimatedMargin,
+                            preferenceBoost = result.preferenceBoost,
                             riskFlags = result.riskFlags
                         )
-                        val isNew = database.upsertListing(scored)
-                        val clearsMargin = scored.estimatedMargin?.let { it >= search.minMargin } ?: false
-                        if (isNew && scored.score >= 75 && clearsMargin) {
-                            newOpportunities += scored
+                        if (database.upsertListing(scored)) {
+                            newIds += scored.id
                         }
                     }
             }
 
+        recomputeIntelligence()
+
+        val searchesById = database.getSearches().associateBy { it.id }
+        val newOpportunities = newIds.mapNotNull(database::getListing)
+            .filter { listing ->
+                val threshold = searchesById[listing.searchId]?.minMargin ?: 0.0
+                listing.score >= 75 &&
+                    (listing.estimatedMargin ?: 0.0) >= threshold
+            }
+
         ScanOutcome(scanned, newOpportunities)
+    }
+
+    private fun recomputeIntelligence() {
+        val universe = database.getAllListings()
+        if (universe.isEmpty()) return
+
+        val profile = database.getPreferenceProfile()
+
+        universe.forEach { listing ->
+            val market = MarketEstimator.estimate(listing, universe)
+            val preferenceBoost = PreferenceEngine.boost(listing.title, profile)
+
+            val prepared = listing.copy(
+                marketMedian = market.median,
+                marketSampleCount = market.sampleCount,
+                marketConfidence = market.confidence,
+                preferenceBoost = preferenceBoost
+            )
+
+            val result = OpportunityScorer.score(prepared, preferenceBoost)
+            database.updateIntelligence(
+                prepared.copy(
+                    score = result.score,
+                    estimatedMargin = result.estimatedMargin,
+                    preferenceBoost = result.preferenceBoost,
+                    riskFlags = result.riskFlags
+                )
+            )
+        }
     }
 }
