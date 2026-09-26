@@ -31,7 +31,7 @@ Android-first scanner per monitorare ricerche salvate, confrontare annunci e ind
 - [x] archivio locale
 - [x] scoring locale
 - [x] worker periodico
-- [ ] connettore sorgente annunci
+- [x] importazione annunci via Condividi Android\n- [ ] connettore remoto autorizzato
 
 ### Fase 2 — Scanner
 - [ ] creazione/modifica ricerca
@@ -70,4 +70,4 @@ Riferimenti:
 
 ## Build
 
-Il progetto usa AGP 9.4, Gradle 9.6 e Compose BOM 2026.09.00.
+Il progetto usa AGP 9.4, Gradle 9.6, Kotlin 2.4.20 e Compose BOM 2026.09.00.
