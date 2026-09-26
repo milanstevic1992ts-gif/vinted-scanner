@@ -46,6 +46,15 @@ class IntelligenceEngineTest {
     }
 
     @Test
+    fun explicitCategoryWinsOverModelPhrase() {
+        val signature = ProductSignatureExtractor.extract(
+            "Nike Air Max jacket giacca taglia M"
+        )
+
+        assertEquals("outerwear", signature.category)
+    }
+
+    @Test
     fun comparableEngineRejectsDifferentKnownBrand() {
         val nike = ProductSignatureExtractor.extract("Nike Air Max 95")
         val adidas = ProductSignatureExtractor.extract("Adidas Air Max 95")
