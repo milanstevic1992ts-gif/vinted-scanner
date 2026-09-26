@@ -4,7 +4,7 @@ APK Android standalone per raccogliere annunci condivisi dal telefono, confronta
 
 ## Stato attuale
 
-Versione applicazione: **0.6.0**
+Versione applicazione: **0.7.0**
 
 ### Fase 1 — Fondazioni
 - [x] progetto Android nativo Kotlin + Jetpack Compose
@@ -82,6 +82,25 @@ Versione applicazione: **0.6.0**
 - [x] backup aggiornato con qualità comparabili
 - [x] test marca / taglia / categoria / outlier
 
+### Fase 7 — Centro Affari
+- [x] motore ranking separato dallo score tecnico
+- [x] Indice Affare 0–100
+- [x] ranking per margine, confidenza, similarità, freschezza e rischi
+- [x] penalità dati comparabili insufficienti
+- [x] esclusione automatica annunci marcati "Non mi interessa"
+- [x] motivazioni leggibili del ranking
+- [x] Radar occasioni con conteggi Indice 80+ e Margine 30+
+- [x] filtro Tutti
+- [x] filtro Indice 80+
+- [x] filtro Margine 30+
+- [x] filtro Alta confidenza
+- [x] filtro Recenti
+- [x] ordinamento per Indice
+- [x] ordinamento per Margine
+- [x] ordinamento per Confidenza
+- [x] ordinamento per Più recenti
+- [x] test ranking / rischio / freschezza / feedback
+
 ## Come funziona l'Intelligence locale
 
 Vinted Scanner non inventa un prezzo "AI". Usa gli annunci presenti nel database locale:
@@ -120,6 +139,10 @@ Il progetto non include bypass di login, anti-bot, automazioni di acquisto o mec
 - compileSdk / targetSdk 37
 - Gradle 9.6
 - Compose BOM 2026.09.00
+
+## Centro Affari
+
+L'Indice Affare non è una probabilità di guadagno e non sostituisce lo score tecnico dell'annuncio. È un ranking locale derivato da score, margine stimato relativo al valore osservato, confidenza, similarità dei comparabili, freschezza e segnali di rischio. Ogni card mostra le motivazioni principali che hanno influenzato il ranking.
 
 ## Modalità Live
 
