@@ -77,7 +77,7 @@ object ProductSignatureExtractor {
     )
 
     private val explicitSizeRegex = Regex(
-        """(?:taglia|size|tg)s*[:-]?s*([0-9]{1,2}(?:[.,]5)?|[2-5]XL|XL|XXL|XXXL|XS|XXS|S|M|L)""",
+        """(?:taglia|size|tg)\s*[:\-]?\s*([0-9]{1,2}(?:[.,]5)?|[2-5]XL|XL|XXL|XXXL|XS|XXS|S|M|L)\b""",
         RegexOption.IGNORE_CASE
     )
 
@@ -201,6 +201,6 @@ object ProductSignatureExtractor {
             .replace("levi's", "levis")
             .replace("dr. martens", "dr martens")
             .replace(Regex("[^a-z0-9à-ÿ]+"), " ")
-            .replace(Regex("\s+"), " ")
+            .replace(Regex("""\s+"""), " ")
             .trim()
 }
