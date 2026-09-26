@@ -68,3 +68,37 @@ data class PreferenceProfile(
     fun weightFor(tokens: Collection<String>): Int =
         tokens.sumOf { tokenWeights[it] ?: 0 }
 }
+
+enum class SourceKind {
+    MANUAL_SHARE,
+    AUTHORIZED_REMOTE
+}
+
+enum class SourceStatus {
+    READY,
+    IDLE,
+    SCANNING,
+    NOT_CONFIGURED,
+    ERROR,
+    DISABLED
+}
+
+data class SourceDescriptor(
+    val id: String,
+    val name: String,
+    val kind: SourceKind,
+    val supportsAutomaticScan: Boolean,
+    val requiresConfiguration: Boolean
+)
+
+data class SourceDiagnostic(
+    val descriptor: SourceDescriptor,
+    val enabled: Boolean,
+    val status: SourceStatus,
+    val lastEventAt: Long? = null,
+    val lastScanAt: Long? = null,
+    val lastSuccessAt: Long? = null,
+    val lastReceivedCount: Int = 0,
+    val totalReceived: Long = 0,
+    val lastError: String? = null
+)
