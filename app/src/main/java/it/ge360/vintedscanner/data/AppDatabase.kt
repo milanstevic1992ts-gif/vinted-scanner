@@ -343,6 +343,19 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.
         return out
     }
 
+    fun getArchiveListings(limit: Int = 1000): List<Listing> {
+        val out = mutableListOf<Listing>()
+        readableDatabase.rawQuery(
+            "SELECT * FROM listings ORDER BY last_seen_at DESC LIMIT ?",
+            arrayOf(limit.toString())
+        ).use { c ->
+            while (c.moveToNext()) {
+                out += c.toListing()
+            }
+        }
+        return out
+    }
+
     fun getAllListings(limit: Int = 500): List<Listing> {
         val out = mutableListOf<Listing>()
         readableDatabase.rawQuery(
