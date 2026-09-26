@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.ThumbDown
 import androidx.compose.material3.AlertDialog
@@ -77,6 +78,9 @@ import it.ge360.vintedscanner.model.Listing
 import it.ge360.vintedscanner.model.PricePoint
 import it.ge360.vintedscanner.model.SavedSearch
 import it.ge360.vintedscanner.model.SharedListingDraft
+import it.ge360.vintedscanner.model.SourceDiagnostic
+import it.ge360.vintedscanner.model.SourceKind
+import it.ge360.vintedscanner.model.SourceStatus
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -89,6 +93,7 @@ fun VintedScannerApp(viewModel: MainViewModel) {
     val context = LocalContext.current
     var tab by remember { mutableIntStateOf(0) }
     var createRequest by remember { mutableStateOf(false) }
+    var sourceDialogOpen by remember { mutableStateOf(false) }
 
     val backupPayload = state.backupPayload
     val backupLauncher = rememberLauncherForActivityResult(
@@ -127,6 +132,15 @@ fun VintedScannerApp(viewModel: MainViewModel) {
         )
     }
 
+    if (sourceDialogOpen) {
+        SourceDiagnosticsDialog(
+            diagnostics = state.sourceDiagnostics,
+            onDismiss = { sourceDialogOpen = false },
+            onRefresh = viewModel::refreshSources,
+            onEnabledChange = viewModel::setSourceEnabled
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -142,6 +156,14 @@ fun VintedScannerApp(viewModel: MainViewModel) {
                     }
                 },
                 actions = {
+                    IconButton(
+                        onClick = {
+                            viewModel.refreshSources()
+                            sourceDialogOpen = true
+                        }
+                    ) {
+                        Icon(Icons.Default.Settings, contentDescription = "Diagnostica sorgenti")
+                    }
                     TextButton(onClick = viewModel::scanNow) { Text("AGGIORNA") }
                 }
             )
@@ -204,7 +226,11 @@ fun VintedScannerApp(viewModel: MainViewModel) {
                         onHistory = viewModel::showHistory,
                         onNotInterested = viewModel::notInterested,
                         onLiveChange = viewModel::setLiveMode,
-                        onBackup = viewModel::prepareBackup
+                        onBackup = viewModel::prepareBackup,
+                        onSources = {
+                            viewModel.refreshSources()
+                            sourceDialogOpen = true
+                        }
                     )
                     1 -> Searches(
                         state = state,
@@ -246,7 +272,8 @@ private fun Dashboard(
     onHistory: (Listing) -> Unit,
     onNotInterested: (Listing) -> Unit,
     onLiveChange: (Boolean) -> Unit,
-    onBackup: () -> Unit
+    onBackup: () -> Unit,
+    onSources: () -> Unit
 ) {
     LazyColumn(
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -389,6 +416,44 @@ private fun Dashboard(
                                     if (entry.value >= 0) "+" + entry.value else entry.value.toString()
                             }
                         )
+                    }
+                }
+            }
+        }
+
+        item {
+            val readyCount = state.sourceDiagnostics.count { it.status == SourceStatus.READY }
+            val errorCount = state.sourceDiagnostics.count { it.status == SourceStatus.ERROR }
+            Card(
+                Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp)
+            ) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(16.dp)
+                ) {
+                    Text(
+                        "Sorgenti annunci",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        readyCount.toString() + " pronte · " +
+                            state.sourceDiagnostics.size + " configurate" +
+                            if (errorCount > 0) " · $errorCount errori" else ""
+                    )
+                    state.sourceDiagnostics.take(2).forEach { source ->
+                        Row(Modifier.fillMaxWidth()) {
+                            Text(source.descriptor.name, modifier = Modifier.weight(1f))
+                            Text(
+                                sourceStatusLabel(source.status),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = sourceStatusColor(source.status)
+                            )
+                        }
+                    }
+                    OutlinedButton(onClick = onSources, modifier = Modifier.fillMaxWidth()) {
+                        Text("DIAGNOSTICA SORGENTI")
                     }
                 }
             }
@@ -838,6 +903,112 @@ private fun ListingCard(
 }
 
 @Composable
+private fun SourceDiagnosticsDialog(
+    diagnostics: List<SourceDiagnostic>,
+    onDismiss: () -> Unit,
+    onRefresh: () -> Unit,
+    onEnabledChange: (String, Boolean) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Diagnostica sorgenti") },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier
+                    .heightIn(max = 520.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                if (diagnostics.isEmpty()) {
+                    Text("Nessuna sorgente registrata.")
+                } else {
+                    diagnostics.forEach { source ->
+                        Card(
+                            Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Column(
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.padding(14.dp)
+                            ) {
+                                Row(Modifier.fillMaxWidth()) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text(
+                                            source.descriptor.name,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            sourceKindLabel(source.descriptor.kind),
+                                            style = MaterialTheme.typography.labelMedium
+                                        )
+                                    }
+                                    if (source.descriptor.supportsAutomaticScan) {
+                                        Switch(
+                                            checked = source.enabled,
+                                            onCheckedChange = {
+                                                onEnabledChange(source.descriptor.id, it)
+                                            }
+                                        )
+                                    }
+                                }
+
+                                Text(
+                                    sourceStatusLabel(source.status),
+                                    color = sourceStatusColor(source.status),
+                                    fontWeight = FontWeight.SemiBold
+                                )
+
+                                if (source.descriptor.requiresConfiguration &&
+                                    source.status == SourceStatus.NOT_CONFIGURED
+                                ) {
+                                    Text(
+                                        "Richiede un connettore autorizzato prima di poter scaricare annunci automaticamente.",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+
+                                Text(
+                                    "Ultimo evento: " + formatOptionalDate(source.lastEventAt),
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                Text(
+                                    "Ultimo scan: " + formatOptionalDate(source.lastScanAt),
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                Text(
+                                    "Ultimo successo: " + formatOptionalDate(source.lastSuccessAt),
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                Text(
+                                    "Ultimo giro: " + source.lastReceivedCount +
+                                        " · Totale ricevuti: " + source.totalReceived,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+
+                                source.lastError?.takeIf { it.isNotBlank() }?.let {
+                                    Text(
+                                        "Errore: $it",
+                                        color = MaterialTheme.colorScheme.error,
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                OutlinedButton(onClick = onRefresh, modifier = Modifier.fillMaxWidth()) {
+                    Text("AGGIORNA DIAGNOSTICA")
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("CHIUDI") }
+        }
+    )
+}
+
+@Composable
 private fun SharedImportDialog(
     draft: SharedListingDraft,
     onDismiss: () -> Unit,
@@ -1026,3 +1197,33 @@ private fun String.toDecimalOrNull(): Double? =
 
 private fun formatDate(timestamp: Long): String =
     SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(timestamp))
+
+@Composable
+private fun sourceStatusColor(status: SourceStatus) =
+    when (status) {
+        SourceStatus.READY -> MaterialTheme.colorScheme.primary
+        SourceStatus.ERROR -> MaterialTheme.colorScheme.error
+        SourceStatus.SCANNING -> MaterialTheme.colorScheme.secondary
+        SourceStatus.NOT_CONFIGURED,
+        SourceStatus.DISABLED,
+        SourceStatus.IDLE -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
+private fun sourceStatusLabel(status: SourceStatus): String =
+    when (status) {
+        SourceStatus.READY -> "Pronta"
+        SourceStatus.IDLE -> "In attesa"
+        SourceStatus.SCANNING -> "Scansione in corso"
+        SourceStatus.NOT_CONFIGURED -> "Non configurata"
+        SourceStatus.ERROR -> "Errore"
+        SourceStatus.DISABLED -> "Disattivata"
+    }
+
+private fun sourceKindLabel(kind: SourceKind): String =
+    when (kind) {
+        SourceKind.MANUAL_SHARE -> "Ingresso manuale Android"
+        SourceKind.AUTHORIZED_REMOTE -> "Connettore remoto autorizzato"
+    }
+
+private fun formatOptionalDate(timestamp: Long?): String =
+    timestamp?.let(::formatDate) ?: "—"
