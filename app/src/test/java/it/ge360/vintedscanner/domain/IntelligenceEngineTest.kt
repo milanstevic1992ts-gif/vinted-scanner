@@ -1,5 +1,6 @@
 package it.ge360.vintedscanner.domain
 
+import it.ge360.vintedscanner.model.FeedbackReason
 import it.ge360.vintedscanner.model.Listing
 import it.ge360.vintedscanner.model.PreferenceProfile
 import org.junit.Assert.assertEquals
@@ -105,6 +106,45 @@ class IntelligenceEngineTest {
 
         assertTrue(PreferenceEngine.boost("Nike Air Max 95", profile) > 0)
         assertTrue(PreferenceEngine.boost("Adidas Samba", profile) < 0)
+    }
+
+    @Test
+    fun purchasedStrengthensPreferencesMoreThanFavorite() {
+        val favoriteWeights = PreferenceEngine.applyReason(
+            emptyMap(),
+            "Nike Air Max 95",
+            FeedbackReason.FAVORITE
+        )
+        val purchasedWeights = PreferenceEngine.applyReason(
+            emptyMap(),
+            "Nike Air Max 95",
+            FeedbackReason.PURCHASED
+        )
+
+        assertTrue((purchasedWeights["nike"] ?: 0) > (favoriteWeights["nike"] ?: 0))
+    }
+
+    @Test
+    fun tooExpensiveDoesNotPenalizeModelTokens() {
+        val weights = PreferenceEngine.applyReason(
+            emptyMap(),
+            "Nike Air Max 95",
+            FeedbackReason.TOO_EXPENSIVE
+        )
+
+        assertTrue(weights.isEmpty())
+    }
+
+    @Test
+    fun wrongModelStronglyPenalizesProductTokens() {
+        val weights = PreferenceEngine.applyReason(
+            emptyMap(),
+            "Adidas Samba",
+            FeedbackReason.WRONG_MODEL
+        )
+
+        assertTrue((weights["adidas"] ?: 0) <= -4)
+        assertTrue((weights["samba"] ?: 0) <= -4)
     }
 
     @Test
