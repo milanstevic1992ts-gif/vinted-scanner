@@ -132,6 +132,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun importSharedListing(
         title: String,
         price: Double?,
+        extraCosts: Double?,
         marketMedian: Double?,
         url: String,
         condition: String?
@@ -141,6 +142,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val (listing, isNew) = repository.importSharedListing(
                 title = title,
                 price = price,
+                extraCosts = extraCosts ?: 0.0,
                 marketMedian = marketMedian,
                 url = url,
                 condition = condition
