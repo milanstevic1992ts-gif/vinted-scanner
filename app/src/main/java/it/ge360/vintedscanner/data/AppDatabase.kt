@@ -6,8 +6,12 @@ import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import it.ge360.vintedscanner.domain.PreferenceEngine
+import it.ge360.vintedscanner.model.CalibrationReview
+import it.ge360.vintedscanner.model.CalibrationSession
+import it.ge360.vintedscanner.model.EstimateVerdict
 import it.ge360.vintedscanner.model.FeedbackEvent
 import it.ge360.vintedscanner.model.FeedbackReason
+import it.ge360.vintedscanner.model.RankingVerdict
 import it.ge360.vintedscanner.model.Listing
 import it.ge360.vintedscanner.model.PreferenceProfile
 import it.ge360.vintedscanner.model.PricePoint
@@ -17,7 +21,7 @@ import it.ge360.vintedscanner.model.SourceDiagnostic
 import it.ge360.vintedscanner.model.SourceKind
 import it.ge360.vintedscanner.model.SourceStatus
 
-class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.db", null, 6) {
+class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.db", null, 7) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
             """
@@ -98,6 +102,40 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.
             """.trimIndent()
         )
         db.execSQL("CREATE INDEX idx_feedback_events_listing ON feedback_events(listing_id, created_at DESC)")
+        db.execSQL(
+            """
+            CREATE TABLE calibration_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                started_at INTEGER NOT NULL,
+                completed_at INTEGER,
+                target_count INTEGER NOT NULL DEFAULT 25
+            )
+            """.trimIndent()
+        )
+        db.execSQL(
+            """
+            CREATE TABLE calibration_reviews (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id INTEGER NOT NULL,
+                listing_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                signature_correct INTEGER NOT NULL,
+                estimate_verdict TEXT NOT NULL,
+                ranking_verdict TEXT NOT NULL,
+                expected_value REAL,
+                observed_median REAL,
+                market_confidence INTEGER NOT NULL,
+                market_similarity INTEGER NOT NULL,
+                deal_index INTEGER NOT NULL,
+                score INTEGER NOT NULL,
+                estimated_margin REAL,
+                notes TEXT,
+                UNIQUE(session_id, listing_id)
+            )
+            """.trimIndent()
+        )
+        db.execSQL("CREATE INDEX idx_calibration_reviews_session ON calibration_reviews(session_id, created_at DESC)")
         db.execSQL(
             """
             CREATE TABLE source_diagnostics (
@@ -194,6 +232,201 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.
                 "UPDATE listings SET feedback_reason = CASE WHEN feedback > 0 THEN 'FAVORITE' WHEN feedback < 0 THEN 'DISCARDED' ELSE 'NONE' END"
             )
         }
+        if (oldVersion < 7) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS calibration_sessions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    started_at INTEGER NOT NULL,
+                    completed_at INTEGER,
+                    target_count INTEGER NOT NULL DEFAULT 25
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS calibration_reviews (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id INTEGER NOT NULL,
+                    listing_id TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    signature_correct INTEGER NOT NULL,
+                    estimate_verdict TEXT NOT NULL,
+                    ranking_verdict TEXT NOT NULL,
+                    expected_value REAL,
+                    observed_median REAL,
+                    market_confidence INTEGER NOT NULL,
+                    market_similarity INTEGER NOT NULL,
+                    deal_index INTEGER NOT NULL,
+                    score INTEGER NOT NULL,
+                    estimated_margin REAL,
+                    notes TEXT,
+                    UNIQUE(session_id, listing_id)
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS idx_calibration_reviews_session ON calibration_reviews(session_id, created_at DESC)"
+            )
+        }
+    }
+
+    fun startCalibrationSession(targetCount: Int = 25): CalibrationSession {
+        val now = System.currentTimeMillis()
+        writableDatabase.beginTransaction()
+        try {
+            val closeValues = ContentValues().apply { put("completed_at", now) }
+            writableDatabase.update(
+                "calibration_sessions",
+                closeValues,
+                "completed_at IS NULL",
+                null
+            )
+
+            val values = ContentValues().apply {
+                put("started_at", now)
+                putNull("completed_at")
+                put("target_count", targetCount.coerceIn(10, 100))
+            }
+            val id = writableDatabase.insertOrThrow("calibration_sessions", null, values)
+            writableDatabase.setTransactionSuccessful()
+            return CalibrationSession(
+                id = id,
+                startedAt = now,
+                targetCount = targetCount.coerceIn(10, 100),
+                reviewedCount = 0
+            )
+        } finally {
+            writableDatabase.endTransaction()
+        }
+    }
+
+    fun getActiveCalibrationSession(): CalibrationSession? =
+        readableDatabase.rawQuery(
+            """
+            SELECT s.id, s.started_at, s.completed_at, s.target_count,
+                   COUNT(r.id) AS reviewed_count
+            FROM calibration_sessions s
+            LEFT JOIN calibration_reviews r ON r.session_id = s.id
+            WHERE s.completed_at IS NULL
+            GROUP BY s.id
+            ORDER BY s.started_at DESC
+            LIMIT 1
+            """.trimIndent(),
+            null
+        ).use { c ->
+            if (!c.moveToFirst()) return@use null
+            CalibrationSession(
+                id = c.getLong(0),
+                startedAt = c.getLong(1),
+                completedAt = if (c.isNull(2)) null else c.getLong(2),
+                targetCount = c.getInt(3),
+                reviewedCount = c.getInt(4)
+            )
+        }
+
+    fun getLatestCalibrationSession(): CalibrationSession? =
+        readableDatabase.rawQuery(
+            """
+            SELECT s.id, s.started_at, s.completed_at, s.target_count,
+                   COUNT(r.id) AS reviewed_count
+            FROM calibration_sessions s
+            LEFT JOIN calibration_reviews r ON r.session_id = s.id
+            GROUP BY s.id
+            ORDER BY s.started_at DESC
+            LIMIT 1
+            """.trimIndent(),
+            null
+        ).use { c ->
+            if (!c.moveToFirst()) return@use null
+            CalibrationSession(
+                id = c.getLong(0),
+                startedAt = c.getLong(1),
+                completedAt = if (c.isNull(2)) null else c.getLong(2),
+                targetCount = c.getInt(3),
+                reviewedCount = c.getInt(4)
+            )
+        }
+
+    fun completeCalibrationSession(sessionId: Long) {
+        val values = ContentValues().apply {
+            put("completed_at", System.currentTimeMillis())
+        }
+        writableDatabase.update(
+            "calibration_sessions",
+            values,
+            "id = ? AND completed_at IS NULL",
+            arrayOf(sessionId.toString())
+        )
+    }
+
+    fun saveCalibrationReview(review: CalibrationReview) {
+        val values = ContentValues().apply {
+            put("session_id", review.sessionId)
+            put("listing_id", review.listingId)
+            put("title", review.title)
+            put("created_at", review.createdAt)
+            put("signature_correct", if (review.signatureCorrect) 1 else 0)
+            put("estimate_verdict", review.estimateVerdict.name)
+            put("ranking_verdict", review.rankingVerdict.name)
+            review.expectedValue?.let { put("expected_value", it) } ?: putNull("expected_value")
+            review.observedMedian?.let { put("observed_median", it) } ?: putNull("observed_median")
+            put("market_confidence", review.marketConfidence)
+            put("market_similarity", review.marketSimilarity)
+            put("deal_index", review.dealIndex)
+            put("score", review.score)
+            review.estimatedMargin?.let { put("estimated_margin", it) } ?: putNull("estimated_margin")
+            review.notes?.takeIf(String::isNotBlank)?.let { put("notes", it) } ?: putNull("notes")
+        }
+        writableDatabase.insertWithOnConflict(
+            "calibration_reviews",
+            null,
+            values,
+            SQLiteDatabase.CONFLICT_REPLACE
+        )
+    }
+
+    fun getCalibrationReviews(sessionId: Long): List<CalibrationReview> {
+        val out = mutableListOf<CalibrationReview>()
+        readableDatabase.rawQuery(
+            """
+            SELECT id, session_id, listing_id, title, created_at, signature_correct,
+                   estimate_verdict, ranking_verdict, expected_value, observed_median,
+                   market_confidence, market_similarity, deal_index, score,
+                   estimated_margin, notes
+            FROM calibration_reviews
+            WHERE session_id = ?
+            ORDER BY created_at DESC
+            """.trimIndent(),
+            arrayOf(sessionId.toString())
+        ).use { c ->
+            while (c.moveToNext()) {
+                out += CalibrationReview(
+                    id = c.getLong(0),
+                    sessionId = c.getLong(1),
+                    listingId = c.getString(2),
+                    title = c.getString(3),
+                    createdAt = c.getLong(4),
+                    signatureCorrect = c.getInt(5) == 1,
+                    estimateVerdict = runCatching {
+                        EstimateVerdict.valueOf(c.getString(6))
+                    }.getOrDefault(EstimateVerdict.NO_DATA),
+                    rankingVerdict = runCatching {
+                        RankingVerdict.valueOf(c.getString(7))
+                    }.getOrDefault(RankingVerdict.GOOD),
+                    expectedValue = if (c.isNull(8)) null else c.getDouble(8),
+                    observedMedian = if (c.isNull(9)) null else c.getDouble(9),
+                    marketConfidence = c.getInt(10),
+                    marketSimilarity = c.getInt(11),
+                    dealIndex = c.getInt(12),
+                    score = c.getInt(13),
+                    estimatedMargin = if (c.isNull(14)) null else c.getDouble(14),
+                    notes = if (c.isNull(15)) null else c.getString(15)
+                )
+            }
+        }
+        return out
     }
 
     fun ensureSources(descriptors: List<SourceDescriptor>) {
