@@ -1,10 +1,13 @@
 package it.ge360.vintedscanner.ui
 
 import android.app.Application
+import android.content.Intent
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import it.ge360.vintedscanner.VintedScannerApplication
 import it.ge360.vintedscanner.data.SharedListingParser
+import it.ge360.vintedscanner.live.LiveScannerService
 import it.ge360.vintedscanner.model.Listing
 import it.ge360.vintedscanner.model.PreferenceProfile
 import it.ge360.vintedscanner.model.PricePoint
@@ -19,17 +22,25 @@ data class ScannerUiState(
     val searches: List<SavedSearch> = emptyList(),
     val opportunities: List<Listing> = emptyList(),
     val favorites: List<Listing> = emptyList(),
+    val archive: List<Listing> = emptyList(),
     val preferenceProfile: PreferenceProfile = PreferenceProfile(),
     val sharedDraft: SharedListingDraft? = null,
     val priceHistory: List<PricePoint> = emptyList(),
     val historyTitle: String? = null,
-    val loading: Boolean = false
+    val loading: Boolean = false,
+    val liveMode: Boolean = false,
+    val backupPayload: String? = null
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application as VintedScannerApplication
     private val repository = app.repository
-    private val _state = MutableStateFlow(ScannerUiState())
+    private val prefs = app.getSharedPreferences(LiveScannerService.PREFS, 0)
+    private val _state = MutableStateFlow(
+        ScannerUiState(
+            liveMode = prefs.getBoolean(LiveScannerService.KEY_LIVE, false)
+        )
+    )
     val state: StateFlow<ScannerUiState> = _state.asStateFlow()
 
     init { refresh() }
@@ -40,11 +51,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val searches = repository.searches()
             val opportunities = repository.opportunities()
             val favorites = repository.favorites()
+            val archive = repository.archive()
             val preferenceProfile = repository.preferenceProfile()
             _state.value = _state.value.copy(
                 searches = searches,
                 opportunities = opportunities,
                 favorites = favorites,
+                archive = archive,
                 preferenceProfile = preferenceProfile,
                 loading = false
             )
@@ -162,5 +175,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             outcome.newOpportunities.forEach(app.notificationHelper::notifyOpportunity)
             refresh()
         }
+    }
+
+    fun setLiveMode(enabled: Boolean) {
+        prefs.edit().putBoolean(LiveScannerService.KEY_LIVE, enabled).apply()
+        val intent = Intent(app, LiveScannerService::class.java)
+        if (enabled) {
+            ContextCompat.startForegroundService(app, intent)
+        } else {
+            app.stopService(intent)
+        }
+        _state.value = _state.value.copy(liveMode = enabled)
+    }
+
+    fun prepareBackup() {
+        viewModelScope.launch {
+            _state.value = _state.value.copy(backupPayload = repository.backupJson())
+        }
+    }
+
+    fun backupConsumed() {
+        _state.value = _state.value.copy(backupPayload = null)
     }
 }
