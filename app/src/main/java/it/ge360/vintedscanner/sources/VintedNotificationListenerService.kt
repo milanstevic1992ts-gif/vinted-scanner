@@ -12,10 +12,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 class VintedNotificationListenerService : NotificationListenerService() {
-    companion object {
-        const val VINTED_PACKAGE = "fr.vinted"
-    }
-
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onListenerConnected() {
@@ -28,7 +24,7 @@ class VintedNotificationListenerService : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         val notification = sbn ?: return
-        if (notification.packageName != VINTED_PACKAGE) return
+        if (notification.packageName != SourceCatalog.VINTED_ANDROID_PACKAGE) return
 
         val app = application as VintedScannerApplication
         val liveEnabled = app.getSharedPreferences(LiveScannerService.PREFS, 0)
@@ -72,6 +68,7 @@ class VintedNotificationListenerService : NotificationListenerService() {
         add(extras.getCharSequence(Notification.EXTRA_BIG_TEXT))
         add(extras.getCharSequence(Notification.EXTRA_SUB_TEXT))
         add(extras.getCharSequence(Notification.EXTRA_INFO_TEXT))
+        add(notification.tickerText)
 
         extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)
             ?.forEach(::add)
