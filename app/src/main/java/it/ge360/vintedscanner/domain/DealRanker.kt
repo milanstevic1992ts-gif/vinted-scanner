@@ -1,6 +1,7 @@
 package it.ge360.vintedscanner.domain
 
 import it.ge360.vintedscanner.model.Listing
+import it.ge360.vintedscanner.model.PreferenceProfile
 import kotlin.math.roundToInt
 
 data class DealCandidate(
@@ -16,11 +17,12 @@ object DealRanker {
 
     fun rank(
         listings: List<Listing>,
-        now: Long = System.currentTimeMillis()
+        now: Long = System.currentTimeMillis(),
+        profile: PreferenceProfile = PreferenceProfile()
     ): List<DealCandidate> =
         listings
             .filter { it.feedback >= 0 }
-            .map { evaluate(it, now) }
+            .map { evaluate(it, now, profile) }
             .sortedWith(
                 compareByDescending<DealCandidate> { it.dealIndex }
                     .thenByDescending { it.listing.estimatedMargin ?: Double.NEGATIVE_INFINITY }
@@ -28,7 +30,11 @@ object DealRanker {
                     .thenByDescending { it.listing.firstSeenAt }
             )
 
-    fun evaluate(listing: Listing, now: Long = System.currentTimeMillis()): DealCandidate {
+    fun evaluate(
+        listing: Listing,
+        now: Long = System.currentTimeMillis(),
+        profile: PreferenceProfile = PreferenceProfile()
+    ): DealCandidate {
         val margin = listing.estimatedMargin
         val reference = listing.marketMedian
         val marginRatioRaw = if (margin != null && reference != null && reference > 0) {
@@ -43,7 +49,20 @@ object DealRanker {
         val similarityPart = listing.marketSimilarity.coerceIn(0, 100) / 100.0 * 10.0
         val freshnessPart = freshness / 100.0 * 15.0
 
-        val riskPenalty = (listing.riskFlags.size * 7).coerceAtMost(21)
+        val learnedConditionMultiplier = if (profile.badConditionCount >= 2) 2 else 1
+        val riskPenalty = (listing.riskFlags.size * 7 * learnedConditionMultiplier).coerceAtMost(28)
+
+        val acquisitionRatio = if (reference != null && reference > 0) {
+            (listing.price + listing.shipping) / reference
+        } else null
+        val learnedPricePenalty = when {
+            profile.tooExpensiveCount < 2 -> 0
+            profile.averageTooExpensiveRatio == null -> 0
+            acquisitionRatio == null -> 0
+            acquisitionRatio >= profile.averageTooExpensiveRatio -> 8
+            else -> 0
+        }
+
         val weakDataPenalty = when {
             listing.marketMedian == null -> 12
             listing.marketSampleCount < 2 -> 8
@@ -58,6 +77,7 @@ object DealRanker {
                 similarityPart +
                 freshnessPart -
                 riskPenalty -
+                learnedPricePenalty -
                 weakDataPenalty
             ).roundToInt().coerceIn(0, 100)
 
@@ -66,7 +86,13 @@ object DealRanker {
             dealIndex = dealIndex,
             freshnessScore = freshness,
             marginRatio = marginRatio,
-            reasons = reasonsFor(listing, marginRatio, freshness)
+            reasons = reasonsFor(
+                listing = listing,
+                marginRatio = marginRatio,
+                freshness = freshness,
+                profile = profile,
+                learnedPricePenalty = learnedPricePenalty
+            )
         )
     }
 
@@ -87,7 +113,9 @@ object DealRanker {
     private fun reasonsFor(
         listing: Listing,
         marginRatio: Int,
-        freshness: Int
+        freshness: Int,
+        profile: PreferenceProfile,
+        learnedPricePenalty: Int
     ): List<String> {
         val reasons = mutableListOf<String>()
 
@@ -120,8 +148,16 @@ object DealRanker {
             reasons += "Outlier esclusi dalla stima"
         }
 
+        if (learnedPricePenalty > 0) {
+            reasons += "Prezzo sopra la soglia che scarti di solito"
+        }
+
         val riskReason = if (listing.riskFlags.isNotEmpty()) {
-            "Presenti segnali di rischio"
+            if (profile.badConditionCount >= 2) {
+                "Rischi penalizzati dalle tue preferenze"
+            } else {
+                "Presenti segnali di rischio"
+            }
         } else null
 
         if (reasons.isEmpty()) {
