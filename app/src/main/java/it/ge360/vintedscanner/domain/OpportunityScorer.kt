@@ -29,6 +29,11 @@ object OpportunityScorer {
         }
 
         points += preferenceBoost.coerceIn(-12, 12)
+        points += when {
+            listing.feedback > 0 -> 4
+            listing.feedback < 0 -> -18
+            else -> 0
+        }
         points -= risks.size * 10
 
         if (listing.marketSampleCount >= 5 && listing.marketConfidence >= 50) {
