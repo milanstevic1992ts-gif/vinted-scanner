@@ -18,6 +18,16 @@ class SourceCatalogTest {
     }
 
     @Test
+    fun vintedNotificationsAreAutomaticAndPermissionBased() {
+        val source = SourceCatalog.vintedNotifications
+
+        assertEquals(SourceCatalog.VINTED_NOTIFICATIONS_ID, source.id)
+        assertEquals(SourceKind.VINTED_NOTIFICATIONS, source.kind)
+        assertTrue(source.supportsAutomaticScan)
+        assertTrue(source.requiresConfiguration)
+    }
+
+    @Test
     fun authorizedRemoteIsAutomaticButRequiresConfiguration() {
         val source = SourceCatalog.authorizedRemote
         val connector = AuthorizedRemoteSource()
