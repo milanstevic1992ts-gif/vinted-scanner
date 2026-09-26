@@ -1,6 +1,7 @@
 package it.ge360.vintedscanner.domain
 
 import it.ge360.vintedscanner.model.Listing
+import it.ge360.vintedscanner.model.PreferenceProfile
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -88,6 +89,66 @@ class DealRankerTest {
         )
 
         assertTrue(clean.dealIndex > risky.dealIndex)
+    }
+
+    @Test
+    fun learnedTooExpensiveThresholdPenalizesSimilarPriceRatio() {
+        val listing = Listing(
+            id = "price-sensitive",
+            searchId = 0,
+            title = "Nike Air Max 95",
+            price = 75.0,
+            marketMedian = 100.0,
+            marketSampleCount = 8,
+            marketConfidence = 85,
+            marketSimilarity = 85,
+            firstSeenAt = now,
+            score = 85,
+            estimatedMargin = 20.0,
+            url = "https://example.invalid/price-sensitive"
+        )
+
+        val neutral = DealRanker.evaluate(listing, now)
+        val learned = DealRanker.evaluate(
+            listing,
+            now,
+            PreferenceProfile(
+                tooExpensiveCount = 3,
+                averageTooExpensiveRatio = 0.70
+            )
+        )
+
+        assertTrue(learned.dealIndex < neutral.dealIndex)
+        assertTrue(learned.reasons.any { it.contains("soglia") })
+    }
+
+    @Test
+    fun badConditionLearningMakesRiskPenaltyStronger() {
+        val listing = Listing(
+            id = "condition-sensitive",
+            searchId = 0,
+            title = "Nike Air Max 95",
+            price = 45.0,
+            marketMedian = 100.0,
+            marketSampleCount = 8,
+            marketConfidence = 85,
+            marketSimilarity = 85,
+            firstSeenAt = now,
+            score = 85,
+            estimatedMargin = 50.0,
+            riskFlags = listOf("macchia"),
+            url = "https://example.invalid/condition-sensitive"
+        )
+
+        val neutral = DealRanker.evaluate(listing, now)
+        val learned = DealRanker.evaluate(
+            listing,
+            now,
+            PreferenceProfile(badConditionCount = 3)
+        )
+
+        assertTrue(learned.dealIndex < neutral.dealIndex)
+        assertTrue(learned.reasons.any { it.contains("preferenze") })
     }
 
     @Test
