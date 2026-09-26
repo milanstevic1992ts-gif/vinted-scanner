@@ -238,6 +238,9 @@ class ScannerRepository(
                 marketMedian = market.median,
                 marketSampleCount = market.sampleCount,
                 marketConfidence = market.confidence,
+                marketSimilarity = market.similarity,
+                marketOutliersRemoved = market.outliersRemoved,
+                comparableLabel = market.comparableLabel,
                 preferenceBoost = preferenceBoost
             )
 
