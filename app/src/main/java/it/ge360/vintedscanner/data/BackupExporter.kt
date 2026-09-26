@@ -1,5 +1,6 @@
 package it.ge360.vintedscanner.data
 
+import it.ge360.vintedscanner.model.FeedbackEvent
 import it.ge360.vintedscanner.model.Listing
 import it.ge360.vintedscanner.model.PreferenceProfile
 import it.ge360.vintedscanner.model.SavedSearch
@@ -13,6 +14,7 @@ object BackupExporter {
         searches: List<SavedSearch>,
         listings: List<Listing>,
         profile: PreferenceProfile,
+        feedbackEvents: List<FeedbackEvent> = emptyList(),
         generatedAt: Long = System.currentTimeMillis()
     ): String = buildString {
         append("{\n")
@@ -69,6 +71,22 @@ object BackupExporter {
             }
             append("]}")
             if (index != listings.lastIndex) append(',')
+            append('\n')
+        }
+        append("  ],\n")
+
+        append("  \"feedbackEvents\": [\n")
+        feedbackEvents.forEachIndexed { index, event ->
+            append("    {")
+            append("\"id\":").append(event.id).append(',')
+            append("\"listingId\":").append(json(event.listingId)).append(',')
+            append("\"reason\":").append(json(event.reason.name)).append(',')
+            append("\"createdAt\":").append(event.createdAt).append(',')
+            append("\"title\":").append(json(event.title)).append(',')
+            append("\"price\":").append(event.price).append(',')
+            append("\"marketMedian\":").append(numberOrNull(event.marketMedian))
+            append("}")
+            if (index != feedbackEvents.lastIndex) append(',')
             append('\n')
         }
         append("  ],\n")
