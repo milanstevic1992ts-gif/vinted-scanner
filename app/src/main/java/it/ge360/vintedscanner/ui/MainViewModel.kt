@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import it.ge360.vintedscanner.VintedScannerApplication
 import it.ge360.vintedscanner.data.SharedListingParser
 import it.ge360.vintedscanner.model.Listing
+import it.ge360.vintedscanner.model.PreferenceProfile
 import it.ge360.vintedscanner.model.PricePoint
 import it.ge360.vintedscanner.model.SavedSearch
 import it.ge360.vintedscanner.model.SharedListingDraft
@@ -18,6 +19,7 @@ data class ScannerUiState(
     val searches: List<SavedSearch> = emptyList(),
     val opportunities: List<Listing> = emptyList(),
     val favorites: List<Listing> = emptyList(),
+    val preferenceProfile: PreferenceProfile = PreferenceProfile(),
     val sharedDraft: SharedListingDraft? = null,
     val priceHistory: List<PricePoint> = emptyList(),
     val historyTitle: String? = null,
@@ -38,10 +40,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val searches = repository.searches()
             val opportunities = repository.opportunities()
             val favorites = repository.favorites()
+            val preferenceProfile = repository.preferenceProfile()
             _state.value = _state.value.copy(
                 searches = searches,
                 opportunities = opportunities,
                 favorites = favorites,
+                preferenceProfile = preferenceProfile,
                 loading = false
             )
         }
@@ -92,6 +96,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun toggleFavorite(listing: Listing) {
         viewModelScope.launch {
             repository.setFavorite(listing.id, !listing.favorite)
+            refresh()
+        }
+    }
+
+    fun notInterested(listing: Listing) {
+        viewModelScope.launch {
+            repository.setNotInterested(listing.id)
             refresh()
         }
     }
