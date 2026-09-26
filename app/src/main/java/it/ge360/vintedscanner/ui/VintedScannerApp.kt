@@ -74,6 +74,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import it.ge360.vintedscanner.domain.DealCandidate
+import it.ge360.vintedscanner.domain.DealRanker
 import it.ge360.vintedscanner.model.Listing
 import it.ge360.vintedscanner.model.PricePoint
 import it.ge360.vintedscanner.model.SavedSearch
@@ -239,9 +241,8 @@ fun VintedScannerApp(viewModel: MainViewModel) {
                         onDelete = viewModel::deleteSearch,
                         onToggle = viewModel::toggleSearch
                     )
-                    2 -> Opportunities(
+                    2 -> DealCenterScreen(
                         listings = state.opportunities,
-                        emptyText = "Le occasioni migliori compariranno qui.",
                         onFavorite = viewModel::toggleFavorite,
                         onHistory = viewModel::showHistory,
                         onNotInterested = viewModel::notInterested
@@ -688,6 +689,143 @@ private fun SearchCard(
 }
 
 @Composable
+private fun DealCenterScreen(
+    listings: List<Listing>,
+    onFavorite: (Listing) -> Unit,
+    onHistory: (Listing) -> Unit,
+    onNotInterested: (Listing) -> Unit
+) {
+    var filter by remember { mutableIntStateOf(0) }
+    var sort by remember { mutableIntStateOf(0) }
+
+    val ranked = remember(listings) { DealRanker.rank(listings) }
+
+    val filtered = when (filter) {
+        1 -> ranked.filter { it.dealIndex >= 80 }
+        2 -> ranked.filter { (it.listing.estimatedMargin ?: Double.NEGATIVE_INFINITY) >= 30.0 }
+        3 -> ranked.filter {
+            it.listing.marketConfidence >= 70 && it.listing.marketSimilarity >= 65
+        }
+        4 -> ranked.filter { it.freshnessScore >= 65 }
+        else -> ranked
+    }
+
+    val visible = when (sort) {
+        1 -> filtered.sortedByDescending { it.listing.estimatedMargin ?: Double.NEGATIVE_INFINITY }
+        2 -> filtered.sortedByDescending { it.listing.marketConfidence }
+        3 -> filtered.sortedByDescending { it.listing.firstSeenAt }
+        else -> filtered
+    }
+
+    LazyColumn(
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.fillMaxSize()
+    ) {
+        item { Spacer(Modifier.height(4.dp)) }
+
+        item {
+            Text(
+                "Centro Affari",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                "Ranking locale basato su margine, qualità comparabili, confidenza, freschezza e rischi.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        item {
+            val best = ranked.firstOrNull()
+            Card(
+                Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                ),
+                shape = RoundedCornerShape(22.dp)
+            ) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(16.dp)
+                ) {
+                    Text("Radar occasioni", fontWeight = FontWeight.Bold)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        MetricCard(
+                            "Indice 80+",
+                            ranked.count { it.dealIndex >= 80 }.toString(),
+                            Modifier.weight(1f)
+                        )
+                        MetricCard(
+                            "Margine 30+",
+                            ranked.count { (it.listing.estimatedMargin ?: -1.0) >= 30.0 }.toString(),
+                            Modifier.weight(1f)
+                        )
+                    }
+                    if (best != null) {
+                        Text(
+                            "Top: " + best.listing.title,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            "Indice Affare " + best.dealIndex + "/100" +
+                                (best.listing.estimatedMargin?.let {
+                                    " · margine " + (if (it >= 0) "+" else "") + "%.2f".format(it) + " €"
+                                } ?: "")
+                        )
+                    }
+                }
+            }
+        }
+
+        item {
+            Text("Filtra", style = MaterialTheme.typography.labelLarge)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilterChip(selected = filter == 0, onClick = { filter = 0 }, label = { Text("Tutti") })
+                FilterChip(selected = filter == 1, onClick = { filter = 1 }, label = { Text("Indice 80+") })
+                FilterChip(selected = filter == 2, onClick = { filter = 2 }, label = { Text("Margine 30+") })
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilterChip(selected = filter == 3, onClick = { filter = 3 }, label = { Text("Alta conf.") })
+                FilterChip(selected = filter == 4, onClick = { filter = 4 }, label = { Text("Recenti") })
+            }
+        }
+
+        item {
+            Text("Ordina", style = MaterialTheme.typography.labelLarge)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilterChip(selected = sort == 0, onClick = { sort = 0 }, label = { Text("Indice") })
+                FilterChip(selected = sort == 1, onClick = { sort = 1 }, label = { Text("Margine") })
+                FilterChip(selected = sort == 2, onClick = { sort = 2 }, label = { Text("Confidenza") })
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilterChip(selected = sort == 3, onClick = { sort = 3 }, label = { Text("Più recenti") })
+            }
+        }
+
+        if (visible.isEmpty()) {
+            item {
+                EmptyCard("Nessun annuncio soddisfa questo filtro.")
+            }
+        } else {
+            items(visible, key = { it.listing.id }) { candidate ->
+                ListingCard(
+                    listing = candidate.listing,
+                    onFavorite = onFavorite,
+                    onHistory = onHistory,
+                    onNotInterested = onNotInterested,
+                    dealCandidate = candidate
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun Opportunities(
     listings: List<Listing>,
     emptyText: String,
@@ -772,7 +910,8 @@ private fun ListingCard(
     listing: Listing,
     onFavorite: (Listing) -> Unit,
     onHistory: (Listing) -> Unit,
-    onNotInterested: (Listing) -> Unit
+    onNotInterested: (Listing) -> Unit,
+    dealCandidate: DealCandidate? = null
 ) {
     val context = LocalContext.current
 
@@ -784,6 +923,42 @@ private fun ListingCard(
             verticalArrangement = Arrangement.spacedBy(7.dp),
             modifier = Modifier.padding(16.dp)
         ) {
+            dealCandidate?.let { deal ->
+                Row(Modifier.fillMaxWidth()) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "Indice Affare " + deal.dealIndex + "/100",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            "Freschezza " + deal.freshnessScore + "/100" +
+                                " · margine relativo " + deal.marginRatio + "%",
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    }
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        shape = RoundedCornerShape(99.dp)
+                    ) {
+                        Text(
+                            "#" + (deal.dealIndex),
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+                deal.reasons.forEach { reason ->
+                    Text(
+                        "• $reason",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                HorizontalDivider()
+            }
+
             Row(Modifier.fillMaxWidth()) {
                 Column(Modifier.weight(1f)) {
                     Text(
