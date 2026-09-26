@@ -30,7 +30,8 @@ data class ScanOutcome(
 
 class ScannerRepository(
     private val database: AppDatabase,
-    private val sources: List<ListingSource> = listOf(AuthorizedRemoteSource())
+    private val sources: List<ListingSource> = listOf(AuthorizedRemoteSource()),
+    private val notificationAccess: () -> Boolean = { false }
 ) {
     init {
         database.ensureSources(SourceCatalog.defaults)
@@ -208,17 +209,97 @@ class ScannerRepository(
         url: String,
         condition: String?
     ): Pair<Listing, Boolean> = withContext(Dispatchers.IO) {
+        val result = saveImportedListing(
+            title = title,
+            price = price,
+            extraCosts = extraCosts,
+            marketMedian = marketMedian,
+            url = url,
+            condition = condition,
+            searchId = 0
+        )
+        database.recordManualSourceImport(SourceCatalog.ANDROID_SHARE_ID, 1)
+        result
+    }
+
+    suspend fun ingestVintedNotification(
+        rawText: String,
+        postedAt: Long
+    ): Listing? = withContext(Dispatchers.IO) {
+        val diagnostic = database.getSourceDiagnostics()
+            .firstOrNull { it.descriptor.id == SourceCatalog.VINTED_NOTIFICATIONS_ID }
+
+        if (diagnostic?.enabled == false) {
+            return@withContext null
+        }
+
+        if (!notificationAccess()) {
+            database.markSourceNotConfigured(
+                SourceCatalog.VINTED_NOTIFICATIONS_ID,
+                "Concedi accesso notifiche Android a Vinted Scanner"
+            )
+            return@withContext null
+        }
+
+        val draft = SharedListingParser.parse(rawText)
+        val url = draft.url
+        val price = draft.priceGuess
+
+        if (url.isNullOrBlank() || price == null) {
+            database.markSourceSuccess(
+                SourceCatalog.VINTED_NOTIFICATIONS_ID,
+                1,
+                "Notifica Vinted ricevuta, ma senza link/prezzo sufficienti per creare un annuncio"
+            )
+            return@withContext null
+        }
+
+        val searchId = matchSearchId(draft.titleGuess, rawText)
+        val (listing, isNew) = saveImportedListing(
+            title = draft.titleGuess,
+            price = price,
+            extraCosts = 0.0,
+            marketMedian = null,
+            url = url,
+            condition = rawText.take(500),
+            searchId = searchId,
+            seenAt = postedAt
+        )
+
+        database.markSourceSuccess(
+            SourceCatalog.VINTED_NOTIFICATIONS_ID,
+            1,
+            if (isNew) "Annuncio importato automaticamente da una notifica Vinted"
+            else "Notifica Vinted ricevuta: annuncio già presente, dati aggiornati"
+        )
+
+        listing
+    }
+
+    private fun saveImportedListing(
+        title: String,
+        price: Double,
+        extraCosts: Double,
+        marketMedian: Double?,
+        url: String,
+        condition: String?,
+        searchId: Long,
+        seenAt: Long = System.currentTimeMillis()
+    ): Pair<Listing, Boolean> {
         val raw = Listing(
             id = SharedListingParser.stableId(url),
-            searchId = 0,
-            title = title.trim().ifBlank { "Annuncio condiviso" },
+            searchId = searchId,
+            title = title.trim().ifBlank { "Annuncio Vinted" },
             price = price,
             shipping = extraCosts.coerceAtLeast(0.0),
             marketMedian = marketMedian,
             marketSampleCount = if (marketMedian != null) 1 else 0,
             marketConfidence = if (marketMedian != null) 25 else 0,
             url = url.trim(),
-            condition = condition?.trim()?.takeIf(String::isNotBlank)
+            condition = condition?.trim()?.takeIf(String::isNotBlank),
+            publishedAt = seenAt,
+            firstSeenAt = seenAt,
+            lastSeenAt = seenAt
         )
 
         val initialScore = OpportunityScorer.score(raw)
@@ -230,10 +311,31 @@ class ScannerRepository(
         )
 
         val isNew = database.upsertListing(initial)
-        database.recordManualSourceImport(SourceCatalog.ANDROID_SHARE_ID, 1)
         recomputeIntelligence()
+        return (database.getListing(initial.id) ?: initial) to isNew
+    }
 
-        (database.getListing(initial.id) ?: initial) to isNew
+    private fun matchSearchId(title: String, rawText: String): Long {
+        val haystack = "$title $rawText".lowercase()
+        return database.getSearches()
+            .asSequence()
+            .filter { it.active }
+            .map { search ->
+                var score = 0
+                if (haystack.contains(search.query.lowercase())) score += 4
+                search.brand?.takeIf(String::isNotBlank)?.let {
+                    if (haystack.contains(it.lowercase())) score += 3
+                }
+                search.size?.takeIf(String::isNotBlank)?.let {
+                    if (haystack.contains(it.lowercase())) score += 1
+                }
+                search to score
+            }
+            .filter { it.second > 0 }
+            .maxByOrNull { it.second }
+            ?.first
+            ?.id
+            ?: 0L
     }
 
     suspend fun scanActive(): ScanOutcome = withContext(Dispatchers.IO) {
@@ -318,10 +420,34 @@ class ScannerRepository(
             if (current?.enabled == false) return@forEach
 
             val source = byId[descriptor.id]
-            when {
-                descriptor.id == SourceCatalog.ANDROID_SHARE_ID -> Unit
-                source == null || !source.isConfigured() ->
-                    database.markSourceNotConfigured(descriptor.id)
+            when (descriptor.id) {
+                SourceCatalog.ANDROID_SHARE_ID -> {
+                    database.markSourceReady(
+                        descriptor.id,
+                        "Pronta per Condividi → Vinted Scanner"
+                    )
+                }
+                SourceCatalog.VINTED_NOTIFICATIONS_ID -> {
+                    if (notificationAccess()) {
+                        database.markSourceReady(
+                            descriptor.id,
+                            "Accesso notifiche concesso · ascolto del pacchetto fr.vinted"
+                        )
+                    } else {
+                        database.markSourceNotConfigured(
+                            descriptor.id,
+                            "Concedi accesso notifiche Android a Vinted Scanner"
+                        )
+                    }
+                }
+                else -> {
+                    if (source == null || !source.isConfigured()) {
+                        database.markSourceNotConfigured(
+                            descriptor.id,
+                            "Richiede credenziali/API Vinted autorizzate"
+                        )
+                    }
+                }
             }
         }
     }
