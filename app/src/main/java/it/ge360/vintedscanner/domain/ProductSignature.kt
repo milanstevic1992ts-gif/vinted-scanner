@@ -107,14 +107,20 @@ object ProductSignatureExtractor {
             .filterNot { it == "taglia" || it == "size" || it == "tg" }
             .toSet()
 
-        val category = when {
-            normalized.contains("air max") ||
-                normalized.contains("air force") ||
-                normalized.contains("new balance") && rawTokens.any { it.matches(Regex("[0-9]{3,4}")) } ->
-                "footwear"
-            else -> categoryKeywords.entries.firstOrNull { (_, keywords) ->
-                rawTokens.any { token -> token in keywords }
-            }?.key
+        val explicitNonFootwear = categoryKeywords.entries
+            .firstOrNull { (key, keywords) ->
+                key != "footwear" && rawTokens.any { token -> token in keywords }
+            }
+            ?.key
+
+        val footwearKeywords = categoryKeywords["footwear"].orEmpty()
+        val category = explicitNonFootwear ?: when {
+            rawTokens.any { token -> token in footwearKeywords } -> "footwear"
+            normalized.contains("air max") -> "footwear"
+            normalized.contains("air force") -> "footwear"
+            normalized.contains("new balance") &&
+                rawTokens.any { it.matches(Regex("[0-9]{3,4}")) } -> "footwear"
+            else -> null
         }
 
         val conditionRank = conditionRank(fullText)
