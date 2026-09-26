@@ -109,6 +109,59 @@ data class FeedbackEvent(
     val marketMedian: Double?
 )
 
+enum class EstimateVerdict {
+    GOOD,
+    TOO_HIGH,
+    TOO_LOW,
+    NO_DATA
+}
+
+enum class RankingVerdict {
+    GOOD,
+    TOO_HIGH,
+    TOO_LOW
+}
+
+data class CalibrationSession(
+    val id: Long,
+    val startedAt: Long,
+    val completedAt: Long? = null,
+    val targetCount: Int = 25,
+    val reviewedCount: Int = 0
+) {
+    val active: Boolean get() = completedAt == null
+}
+
+data class CalibrationReview(
+    val id: Long,
+    val sessionId: Long,
+    val listingId: String,
+    val title: String,
+    val createdAt: Long,
+    val signatureCorrect: Boolean,
+    val estimateVerdict: EstimateVerdict,
+    val rankingVerdict: RankingVerdict,
+    val expectedValue: Double?,
+    val observedMedian: Double?,
+    val marketConfidence: Int,
+    val marketSimilarity: Int,
+    val dealIndex: Int,
+    val score: Int,
+    val estimatedMargin: Double?,
+    val notes: String?
+)
+
+data class CalibrationSummary(
+    val sessionId: Long?,
+    val reviewedCount: Int = 0,
+    val targetCount: Int = 25,
+    val signatureAccuracy: Int? = null,
+    val priceGoodRate: Int? = null,
+    val rankingGoodRate: Int? = null,
+    val meanAbsolutePriceErrorPct: Int? = null,
+    val recommendations: List<String> = emptyList()
+)
+
 enum class SourceKind {
     MANUAL_SHARE,
     AUTHORIZED_REMOTE
