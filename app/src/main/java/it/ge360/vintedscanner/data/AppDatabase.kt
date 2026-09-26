@@ -21,7 +21,7 @@ import it.ge360.vintedscanner.model.SourceDiagnostic
 import it.ge360.vintedscanner.model.SourceKind
 import it.ge360.vintedscanner.model.SourceStatus
 
-class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.db", null, 7) {
+class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.db", null, 8) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
             """
@@ -151,6 +151,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.
                 last_success_at INTEGER,
                 last_received_count INTEGER NOT NULL DEFAULT 0,
                 total_received INTEGER NOT NULL DEFAULT 0,
+                last_detail TEXT,
                 last_error TEXT
             )
             """.trimIndent()
@@ -269,6 +270,9 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.
             db.execSQL(
                 "CREATE INDEX IF NOT EXISTS idx_calibration_reviews_session ON calibration_reviews(session_id, created_at DESC)"
             )
+        }
+        if (oldVersion < 8) {
+            db.execSQL("ALTER TABLE source_diagnostics ADD COLUMN last_detail TEXT")
         }
     }
 
@@ -494,6 +498,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.
                     lastSuccessAt = c.longOrNull("last_success_at"),
                     lastReceivedCount = c.getInt(c.getColumnIndexOrThrow("last_received_count")),
                     totalReceived = c.getLong(c.getColumnIndexOrThrow("total_received")),
+                    lastDetail = c.stringOrNull("last_detail"),
                     lastError = c.stringOrNull("last_error")
                 )
             }
@@ -506,6 +511,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.
             put("enabled", if (enabled) 1 else 0)
             put("status", if (enabled) SourceStatus.IDLE.name else SourceStatus.DISABLED.name)
             put("last_event_at", System.currentTimeMillis())
+            put("last_detail", if (enabled) "Sorgente abilitata" else "Sorgente disattivata")
             putNull("last_error")
         }
         writableDatabase.update("source_diagnostics", values, "source_id = ?", arrayOf(sourceId))
@@ -517,12 +523,17 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.
             put("status", SourceStatus.SCANNING.name)
             put("last_event_at", now)
             put("last_scan_at", now)
+            put("last_detail", "Scansione in corso")
             putNull("last_error")
         }
         writableDatabase.update("source_diagnostics", values, "source_id = ?", arrayOf(sourceId))
     }
 
-    fun markSourceSuccess(sourceId: String, receivedCount: Int) {
+    fun markSourceSuccess(
+        sourceId: String,
+        receivedCount: Int,
+        detail: String? = null
+    ) {
         val now = System.currentTimeMillis()
         writableDatabase.beginTransaction()
         try {
@@ -537,6 +548,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.
                 put("last_success_at", now)
                 put("last_received_count", receivedCount)
                 put("total_received", currentTotal + receivedCount)
+                detail?.let { put("last_detail", it.take(500)) } ?: putNull("last_detail")
                 putNull("last_error")
             }
             writableDatabase.update(
@@ -551,11 +563,23 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.
         }
     }
 
-    fun markSourceNotConfigured(sourceId: String) {
+    fun markSourceReady(sourceId: String, detail: String? = null) {
+        val values = ContentValues().apply {
+            put("status", SourceStatus.READY.name)
+            put("last_event_at", System.currentTimeMillis())
+            put("last_received_count", 0)
+            detail?.let { put("last_detail", it.take(500)) } ?: putNull("last_detail")
+            putNull("last_error")
+        }
+        writableDatabase.update("source_diagnostics", values, "source_id = ?", arrayOf(sourceId))
+    }
+
+    fun markSourceNotConfigured(sourceId: String, detail: String? = null) {
         val values = ContentValues().apply {
             put("status", SourceStatus.NOT_CONFIGURED.name)
             put("last_event_at", System.currentTimeMillis())
             put("last_received_count", 0)
+            detail?.let { put("last_detail", it.take(500)) } ?: putNull("last_detail")
             putNull("last_error")
         }
         writableDatabase.update("source_diagnostics", values, "source_id = ?", arrayOf(sourceId))
@@ -566,6 +590,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.
             put("status", SourceStatus.ERROR.name)
             put("last_event_at", System.currentTimeMillis())
             put("last_received_count", 0)
+            putNull("last_detail")
             put("last_error", message.take(500))
         }
         writableDatabase.update("source_diagnostics", values, "source_id = ?", arrayOf(sourceId))
