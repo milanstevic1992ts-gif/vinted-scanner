@@ -4,7 +4,7 @@ APK Android standalone per raccogliere annunci condivisi dal telefono, confronta
 
 ## Stato attuale
 
-Versione applicazione: **0.5.0**
+Versione applicazione: **0.6.0**
 
 ### Fase 1 — Fondazioni
 - [x] progetto Android nativo Kotlin + Jetpack Compose
@@ -62,17 +62,39 @@ Versione applicazione: **0.5.0**
 - [x] pannello Diagnostica Sorgenti nella UI
 - [x] test automatici del catalogo sorgenti
 
+### Fase 6 — Comparabili avanzati
+- [x] firma prodotto strutturata
+- [x] riconoscimento marca
+- [x] riconoscimento modello tramite token significativi
+- [x] riconoscimento taglia esplicita
+- [x] classificazione categoria prodotto
+- [x] normalizzazione condizione
+- [x] esclusione marche incompatibili
+- [x] esclusione categorie incompatibili
+- [x] esclusione taglie note incompatibili
+- [x] similarità strutturata + similarità testuale
+- [x] filtro robusto prezzi anomali con MAD
+- [x] mediana calcolata solo sui comparabili utilizzabili
+- [x] similarità media dei comparabili
+- [x] conteggio outlier rimossi
+- [x] firma comparabile visibile nelle card
+- [x] migrazione SQLite v5
+- [x] backup aggiornato con qualità comparabili
+- [x] test marca / taglia / categoria / outlier
+
 ## Come funziona l'Intelligence locale
 
 Vinted Scanner non inventa un prezzo "AI". Usa gli annunci presenti nel database locale:
 
 1. normalizza il titolo;
-2. cerca annunci con termini sufficientemente simili;
-3. usa una mediana dei prezzi comparabili;
-4. mostra quanti confronti sono stati usati;
-5. calcola una confidenza 0–100;
-6. sottrae prezzo di acquisto e spese extra;
-7. applica rischi testuali e preferenze personali allo score.
+2. costruisce una firma prodotto con marca, modello, taglia, categoria e condizione;
+3. elimina comparabili incompatibili per marca/categoria/taglia nota;
+4. combina similarità strutturata e testuale;
+5. rimuove prezzi anomali con filtro robusto MAD;
+6. usa la mediana dei comparabili rimasti;
+7. mostra numero confronti, similarità media, outlier rimossi e confidenza 0–100;
+8. sottrae prezzo di acquisto e spese extra;
+9. applica rischi testuali e preferenze personali allo score.
 
 Il cuore insegna un segnale positivo. **Non mi interessa** insegna un segnale negativo. I pesi restano nel database locale del telefono.
 
