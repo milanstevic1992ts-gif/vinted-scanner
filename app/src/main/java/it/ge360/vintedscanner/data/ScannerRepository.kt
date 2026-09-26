@@ -7,16 +7,12 @@ import it.ge360.vintedscanner.model.Listing
 import it.ge360.vintedscanner.model.PreferenceProfile
 import it.ge360.vintedscanner.model.PricePoint
 import it.ge360.vintedscanner.model.SavedSearch
+import it.ge360.vintedscanner.model.SourceDiagnostic
+import it.ge360.vintedscanner.sources.AuthorizedRemoteSource
+import it.ge360.vintedscanner.sources.ListingSource
+import it.ge360.vintedscanner.sources.SourceCatalog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-
-interface ListingSource {
-    suspend fun scan(search: SavedSearch): List<Listing>
-}
-
-class OfflineListingSource : ListingSource {
-    override suspend fun scan(search: SavedSearch): List<Listing> = emptyList()
-}
 
 data class ScanOutcome(
     val scanned: Int,
@@ -25,11 +21,31 @@ data class ScanOutcome(
 
 class ScannerRepository(
     private val database: AppDatabase,
-    private val source: ListingSource = OfflineListingSource()
+    private val sources: List<ListingSource> = listOf(AuthorizedRemoteSource())
 ) {
+    init {
+        database.ensureSources(SourceCatalog.defaults)
+        syncConfigurationState()
+    }
     suspend fun searches(): List<SavedSearch> = withContext(Dispatchers.IO) {
         database.getSearches()
     }
+
+    suspend fun sourceDiagnostics(): List<SourceDiagnostic> = withContext(Dispatchers.IO) {
+        database.getSourceDiagnostics()
+    }
+
+    suspend fun refreshSourceDiagnostics(): List<SourceDiagnostic> = withContext(Dispatchers.IO) {
+        syncConfigurationState()
+        database.getSourceDiagnostics()
+    }
+
+    suspend fun setSourceEnabled(sourceId: String, enabled: Boolean): List<SourceDiagnostic> =
+        withContext(Dispatchers.IO) {
+            database.setSourceEnabled(sourceId, enabled)
+            syncConfigurationState()
+            database.getSourceDiagnostics()
+        }
 
     suspend fun saveSearch(search: SavedSearch): Long = withContext(Dispatchers.IO) {
         database.saveSearch(search)
@@ -112,6 +128,7 @@ class ScannerRepository(
         )
 
         val isNew = database.upsertListing(initial)
+        database.recordManualSourceImport(SourceCatalog.ANDROID_SHARE_ID, 1)
         recomputeIntelligence()
 
         (database.getListing(initial.id) ?: initial) to isNew
@@ -121,36 +138,61 @@ class ScannerRepository(
         var scanned = 0
         val newIds = linkedSetOf<String>()
 
-        database.getSearches()
-            .filter { it.active }
-            .forEach { search ->
-                source.scan(search)
-                    .asSequence()
-                    .filter { search.maxPrice == null || it.price <= search.maxPrice }
-                    .filter { search.brand.isNullOrBlank() || it.title.contains(search.brand, ignoreCase = true) }
-                    .filter {
-                        search.condition.isNullOrBlank() ||
-                            it.condition?.contains(search.condition, ignoreCase = true) == true
-                    }
-                    .filter {
-                        search.size.isNullOrBlank() ||
-                            it.title.contains(search.size, ignoreCase = true)
-                    }
-                    .forEach { raw ->
-                        scanned++
-                        val prepared = raw.copy(searchId = search.id)
-                        val result = OpportunityScorer.score(prepared)
-                        val scored = prepared.copy(
-                            score = result.score,
-                            estimatedMargin = result.estimatedMargin,
-                            preferenceBoost = result.preferenceBoost,
-                            riskFlags = result.riskFlags
-                        )
-                        if (database.upsertListing(scored)) {
-                            newIds += scored.id
-                        }
-                    }
+        val diagnostics = database.getSourceDiagnostics().associateBy { it.descriptor.id }
+
+        sources.forEach { source ->
+            val sourceId = source.descriptor.id
+            val diagnostic = diagnostics[sourceId]
+            if (diagnostic?.enabled == false) return@forEach
+
+            if (!source.isConfigured()) {
+                database.markSourceNotConfigured(sourceId)
+                return@forEach
             }
+
+            database.markSourceScanning(sourceId)
+            var receivedBySource = 0
+
+            try {
+                database.getSearches()
+                    .filter { it.active }
+                    .forEach { search ->
+                        source.scan(search)
+                            .asSequence()
+                            .filter { search.maxPrice == null || it.price <= search.maxPrice }
+                            .filter { search.brand.isNullOrBlank() || it.title.contains(search.brand, ignoreCase = true) }
+                            .filter {
+                                search.condition.isNullOrBlank() ||
+                                    it.condition?.contains(search.condition, ignoreCase = true) == true
+                            }
+                            .filter {
+                                search.size.isNullOrBlank() ||
+                                    it.title.contains(search.size, ignoreCase = true)
+                            }
+                            .forEach { raw ->
+                                scanned++
+                                receivedBySource++
+                                val prepared = raw.copy(searchId = search.id)
+                                val result = OpportunityScorer.score(prepared)
+                                val scored = prepared.copy(
+                                    score = result.score,
+                                    estimatedMargin = result.estimatedMargin,
+                                    preferenceBoost = result.preferenceBoost,
+                                    riskFlags = result.riskFlags
+                                )
+                                if (database.upsertListing(scored)) {
+                                    newIds += scored.id
+                                }
+                            }
+                    }
+                database.markSourceSuccess(sourceId, receivedBySource)
+            } catch (error: Throwable) {
+                database.markSourceError(
+                    sourceId,
+                    error.message ?: error::class.java.simpleName
+                )
+            }
+        }
 
         recomputeIntelligence()
 
@@ -163,6 +205,17 @@ class ScannerRepository(
             }
 
         ScanOutcome(scanned, newOpportunities)
+    }
+
+    private fun syncConfigurationState() {
+        val byId = sources.associateBy { it.descriptor.id }
+        SourceCatalog.defaults.forEach { descriptor ->
+            val source = byId[descriptor.id]
+            when {
+                descriptor.id == SourceCatalog.ANDROID_SHARE_ID -> Unit
+                source == null || !source.isConfigured() -> database.markSourceNotConfigured(descriptor.id)
+            }
+        }
     }
 
     private fun recomputeIntelligence() {
