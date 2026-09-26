@@ -9,7 +9,8 @@ class ScannerWorker(appContext: Context, params: WorkerParameters) : CoroutineWo
     override suspend fun doWork(): Result {
         val app = applicationContext as VintedScannerApplication
         return runCatching {
-            app.repository.scanActive()
+            val outcome = app.repository.scanActive()
+            outcome.newOpportunities.forEach(app.notificationHelper::notifyOpportunity)
             Result.success()
         }.getOrElse { Result.retry() }
     }
