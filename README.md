@@ -4,7 +4,7 @@ APK Android standalone per raccogliere annunci condivisi dal telefono, confronta
 
 ## Stato attuale
 
-Versione applicazione: **0.3.0**
+Versione applicazione: **0.4.0**
 
 ### Fase 1 — Fondazioni
 - [x] progetto Android nativo Kotlin + Jetpack Compose
@@ -39,12 +39,14 @@ Versione applicazione: **0.3.0**
 - [x] test automatici del motore Intelligence
 
 ### Fase 4 — Premium UX
-- [ ] dashboard avanzata
-- [ ] grafici prezzo
-- [ ] pagina archivio/feedback
-- [ ] modalità live foreground
-- [ ] backup/esportazione locale
-- [ ] rifinitura grafica premium
+- [x] dashboard avanzata
+- [x] grafico storico prezzi
+- [x] archivio con filtri Tutti / Watch / Scartati
+- [x] modalità Live foreground con notifica persistente
+- [x] backup JSON locale con selettore file Android
+- [x] tema premium chiaro/scuro
+- [x] icona app dedicata
+- [x] rifinitura card, score, confidenza e margine
 
 ## Come funziona l'Intelligence locale
 
@@ -81,6 +83,14 @@ Il progetto non include bypass di login, anti-bot, automazioni di acquisto o mec
 - compileSdk / targetSdk 37
 - Gradle 9.6
 - Compose BOM 2026.09.00
+
+## Modalità Live
+
+La modalità Live è avviata solo dall'utente e resta visibile tramite una notifica persistente. Il servizio esegue il ciclo dello scanner ogni 60 secondi usando esclusivamente il connettore configurato nell'app. Se non è presente una sorgente remota autorizzata, non inventa dati né aggira protezioni della piattaforma.
+
+## Backup
+
+Dalla Home è possibile esportare un file JSON versionato con ricerche, archivio e preferenze locali. Il file viene salvato nella posizione scelta dall'utente tramite il selettore documenti Android.
 
 ## CI
 
