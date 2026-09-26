@@ -148,19 +148,20 @@ object DealRanker {
             reasons += "Outlier esclusi dalla stima"
         }
 
+        val mandatoryReasons = mutableListOf<String>()
         if (learnedPricePenalty > 0) {
-            reasons += "Prezzo sopra la soglia che scarti di solito"
+            mandatoryReasons += "Prezzo sopra la soglia che scarti di solito"
         }
 
-        val riskReason = if (listing.riskFlags.isNotEmpty()) {
-            if (profile.badConditionCount >= 2) {
+        if (listing.riskFlags.isNotEmpty()) {
+            mandatoryReasons += if (profile.badConditionCount >= 2) {
                 "Rischi penalizzati dalle tue preferenze"
             } else {
                 "Presenti segnali di rischio"
             }
-        } else null
+        }
 
-        if (reasons.isEmpty()) {
+        if (reasons.isEmpty() && mandatoryReasons.isEmpty()) {
             reasons += when {
                 listing.marketMedian == null -> "Dati comparabili ancora insufficienti"
                 listing.marketConfidence < 40 -> "Stima da consolidare"
@@ -168,14 +169,14 @@ object DealRanker {
             }
         }
 
-        val top = reasons.distinct().take(3).toMutableList()
-        if (riskReason != null && riskReason !in top) {
-            if (top.size >= 3) {
-                top[top.lastIndex] = riskReason
-            } else {
-                top += riskReason
-            }
-        }
+        val mandatory = mandatoryReasons.distinct().take(3)
+        val remainingSlots = (3 - mandatory.size).coerceAtLeast(0)
+        val top = reasons
+            .distinct()
+            .filterNot { it in mandatory }
+            .take(remainingSlots)
+            .toMutableList()
+        top += mandatory
 
         return top
     }}
