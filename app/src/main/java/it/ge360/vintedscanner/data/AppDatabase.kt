@@ -5,11 +5,13 @@ import android.content.Context
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import it.ge360.vintedscanner.domain.PreferenceEngine
 import it.ge360.vintedscanner.model.Listing
+import it.ge360.vintedscanner.model.PreferenceProfile
 import it.ge360.vintedscanner.model.PricePoint
 import it.ge360.vintedscanner.model.SavedSearch
 
-class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.db", null, 2) {
+class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.db", null, 3) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
             """
@@ -35,6 +37,8 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.
                 price REAL NOT NULL,
                 shipping REAL NOT NULL DEFAULT 0,
                 market_median REAL,
+                market_sample_count INTEGER NOT NULL DEFAULT 0,
+                market_confidence INTEGER NOT NULL DEFAULT 0,
                 url TEXT NOT NULL,
                 image_url TEXT,
                 condition_text TEXT,
@@ -44,8 +48,10 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.
                 last_seen_at INTEGER NOT NULL,
                 score INTEGER NOT NULL DEFAULT 0,
                 estimated_margin REAL,
+                preference_boost INTEGER NOT NULL DEFAULT 0,
                 risk_flags TEXT NOT NULL DEFAULT '',
-                favorite INTEGER NOT NULL DEFAULT 0
+                favorite INTEGER NOT NULL DEFAULT 0,
+                feedback INTEGER NOT NULL DEFAULT 0
             )
             """.trimIndent()
         )
@@ -56,6 +62,15 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.
                 listing_id TEXT NOT NULL,
                 price REAL NOT NULL,
                 seen_at INTEGER NOT NULL
+            )
+            """.trimIndent()
+        )
+        db.execSQL(
+            """
+            CREATE TABLE preference_weights (
+                token TEXT PRIMARY KEY,
+                weight INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
             )
             """.trimIndent()
         )
@@ -77,6 +92,15 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_price_history_listing ON price_history(listing_id, seen_at DESC)")
             db.execSQL(
                 "INSERT INTO price_history(listing_id, price, seen_at) SELECT id, price, first_seen_at FROM listings"
+            )
+        }
+        if (oldVersion < 3) {
+            db.execSQL("ALTER TABLE listings ADD COLUMN market_sample_count INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE listings ADD COLUMN market_confidence INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE listings ADD COLUMN preference_boost INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE listings ADD COLUMN feedback INTEGER NOT NULL DEFAULT 0")
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS preference_weights (token TEXT PRIMARY KEY, weight INTEGER NOT NULL, updated_at INTEGER NOT NULL)"
             )
         }
     }
@@ -143,22 +167,24 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.
 
     fun upsertListing(listing: Listing): Boolean {
         val existing = readableDatabase.rawQuery(
-            "SELECT price, first_seen_at, favorite FROM listings WHERE id = ?",
+            "SELECT price, first_seen_at, favorite, feedback FROM listings WHERE id = ?",
             arrayOf(listing.id)
         ).use { c ->
             if (c.moveToFirst()) {
-                Triple(
-                    c.getDouble(0),
-                    c.getLong(1),
-                    c.getInt(2) == 1
+                ExistingListing(
+                    price = c.getDouble(0),
+                    firstSeenAt = c.getLong(1),
+                    favorite = c.getInt(2) == 1,
+                    feedback = c.getInt(3)
                 )
             } else null
         }
 
         val isNew = existing == null
-        val previousPrice = existing?.first
-        val firstSeenAt = existing?.second ?: listing.firstSeenAt
-        val favorite = existing?.third ?: listing.favorite
+        val previousPrice = existing?.price
+        val firstSeenAt = existing?.firstSeenAt ?: listing.firstSeenAt
+        val favorite = existing?.favorite ?: listing.favorite
+        val feedback = existing?.feedback ?: listing.feedback
         val now = maxOf(listing.lastSeenAt, System.currentTimeMillis())
 
         val values = ContentValues().apply {
@@ -168,6 +194,8 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.
             put("price", listing.price)
             put("shipping", listing.shipping)
             listing.marketMedian?.let { put("market_median", it) } ?: putNull("market_median")
+            put("market_sample_count", listing.marketSampleCount)
+            put("market_confidence", listing.marketConfidence)
             put("url", listing.url)
             listing.imageUrl?.let { put("image_url", it) } ?: putNull("image_url")
             listing.condition?.let { put("condition_text", it) } ?: putNull("condition_text")
@@ -177,8 +205,10 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.
             put("last_seen_at", now)
             put("score", listing.score)
             listing.estimatedMargin?.let { put("estimated_margin", it) } ?: putNull("estimated_margin")
+            put("preference_boost", listing.preferenceBoost)
             put("risk_flags", listing.riskFlags.joinToString("|"))
             put("favorite", if (favorite) 1 else 0)
+            put("feedback", feedback)
         }
 
         writableDatabase.beginTransaction()
@@ -205,8 +235,77 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.
     }
 
     fun setFavorite(listingId: String, favorite: Boolean) {
+        setListingFeedback(listingId, if (favorite) 1 else 0)
         val values = ContentValues().apply { put("favorite", if (favorite) 1 else 0) }
         writableDatabase.update("listings", values, "id = ?", arrayOf(listingId))
+    }
+
+    fun setNotInterested(listingId: String) {
+        setListingFeedback(listingId, -1)
+        val values = ContentValues().apply { put("favorite", 0) }
+        writableDatabase.update("listings", values, "id = ?", arrayOf(listingId))
+    }
+
+    fun getPreferenceProfile(): PreferenceProfile {
+        val weights = linkedMapOf<String, Int>()
+        readableDatabase.rawQuery(
+            "SELECT token, weight FROM preference_weights WHERE weight != 0",
+            null
+        ).use { c ->
+            while (c.moveToNext()) {
+                weights[c.getString(0)] = c.getInt(1)
+            }
+        }
+        return PreferenceProfile(weights)
+    }
+
+    private fun setListingFeedback(listingId: String, newFeedback: Int) {
+        val current = readableDatabase.rawQuery(
+            "SELECT title, feedback FROM listings WHERE id = ?",
+            arrayOf(listingId)
+        ).use { c ->
+            if (c.moveToFirst()) c.getString(0) to c.getInt(1) else null
+        } ?: return
+
+        val (title, oldFeedback) = current
+        if (oldFeedback == newFeedback) return
+
+        var weights = getPreferenceProfile().tokenWeights
+
+        if (oldFeedback != 0) {
+            weights = PreferenceEngine.updatedWeights(weights, title, -oldFeedback)
+        }
+        if (newFeedback != 0) {
+            weights = PreferenceEngine.updatedWeights(weights, title, newFeedback)
+        }
+
+        writableDatabase.beginTransaction()
+        try {
+            val now = System.currentTimeMillis()
+            weights.forEach { (token, weight) ->
+                if (weight == 0) {
+                    writableDatabase.delete("preference_weights", "token = ?", arrayOf(token))
+                } else {
+                    val values = ContentValues().apply {
+                        put("token", token)
+                        put("weight", weight)
+                        put("updated_at", now)
+                    }
+                    writableDatabase.insertWithOnConflict(
+                        "preference_weights",
+                        null,
+                        values,
+                        SQLiteDatabase.CONFLICT_REPLACE
+                    )
+                }
+            }
+
+            val feedbackValues = ContentValues().apply { put("feedback", newFeedback.coerceIn(-1, 1)) }
+            writableDatabase.update("listings", feedbackValues, "id = ?", arrayOf(listingId))
+            writableDatabase.setTransactionSuccessful()
+        } finally {
+            writableDatabase.endTransaction()
+        }
     }
 
     fun getTopListings(limit: Int = 100, favoritesOnly: Boolean = false): List<Listing> {
@@ -217,27 +316,20 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.
             arrayOf(limit.toString())
         ).use { c ->
             while (c.moveToNext()) {
-                out += Listing(
-                    id = c.getString(c.getColumnIndexOrThrow("id")),
-                    searchId = c.getLong(c.getColumnIndexOrThrow("search_id")),
-                    title = c.getString(c.getColumnIndexOrThrow("title")),
-                    price = c.getDouble(c.getColumnIndexOrThrow("price")),
-                    shipping = c.getDouble(c.getColumnIndexOrThrow("shipping")),
-                    marketMedian = c.doubleOrNull("market_median"),
-                    url = c.getString(c.getColumnIndexOrThrow("url")),
-                    imageUrl = c.stringOrNull("image_url"),
-                    condition = c.stringOrNull("condition_text"),
-                    sellerRating = c.doubleOrNull("seller_rating"),
-                    publishedAt = c.longOrNull("published_at"),
-                    firstSeenAt = c.getLong(c.getColumnIndexOrThrow("first_seen_at")),
-                    lastSeenAt = c.getLong(c.getColumnIndexOrThrow("last_seen_at")),
-                    score = c.getInt(c.getColumnIndexOrThrow("score")),
-                    estimatedMargin = c.doubleOrNull("estimated_margin"),
-                    riskFlags = c.getString(c.getColumnIndexOrThrow("risk_flags"))
-                        .split("|")
-                        .filter(String::isNotBlank),
-                    favorite = c.getInt(c.getColumnIndexOrThrow("favorite")) == 1
-                )
+                out += c.toListing()
+            }
+        }
+        return out
+    }
+
+    fun getAllListings(limit: Int = 500): List<Listing> {
+        val out = mutableListOf<Listing>()
+        readableDatabase.rawQuery(
+            "SELECT * FROM listings ORDER BY last_seen_at DESC LIMIT ?",
+            arrayOf(limit.toString())
+        ).use { c ->
+            while (c.moveToNext()) {
+                out += c.toListing()
             }
         }
         return out
@@ -260,6 +352,33 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.
         return out
     }
 
+    private fun Cursor.toListing(): Listing =
+        Listing(
+            id = getString(getColumnIndexOrThrow("id")),
+            searchId = getLong(getColumnIndexOrThrow("search_id")),
+            title = getString(getColumnIndexOrThrow("title")),
+            price = getDouble(getColumnIndexOrThrow("price")),
+            shipping = getDouble(getColumnIndexOrThrow("shipping")),
+            marketMedian = doubleOrNull("market_median"),
+            marketSampleCount = getInt(getColumnIndexOrThrow("market_sample_count")),
+            marketConfidence = getInt(getColumnIndexOrThrow("market_confidence")),
+            url = getString(getColumnIndexOrThrow("url")),
+            imageUrl = stringOrNull("image_url"),
+            condition = stringOrNull("condition_text"),
+            sellerRating = doubleOrNull("seller_rating"),
+            publishedAt = longOrNull("published_at"),
+            firstSeenAt = getLong(getColumnIndexOrThrow("first_seen_at")),
+            lastSeenAt = getLong(getColumnIndexOrThrow("last_seen_at")),
+            score = getInt(getColumnIndexOrThrow("score")),
+            estimatedMargin = doubleOrNull("estimated_margin"),
+            preferenceBoost = getInt(getColumnIndexOrThrow("preference_boost")),
+            riskFlags = getString(getColumnIndexOrThrow("risk_flags"))
+                .split("|")
+                .filter(String::isNotBlank),
+            favorite = getInt(getColumnIndexOrThrow("favorite")) == 1,
+            feedback = getInt(getColumnIndexOrThrow("feedback"))
+        )
+
     private fun Cursor.doubleOrNull(name: String): Double? {
         val i = getColumnIndexOrThrow(name)
         return if (isNull(i)) null else getDouble(i)
@@ -274,4 +393,11 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.
         val i = getColumnIndexOrThrow(name)
         return if (isNull(i)) null else getString(i)
     }
+
+    private data class ExistingListing(
+        val price: Double,
+        val firstSeenAt: Long,
+        val favorite: Boolean,
+        val feedback: Int
+    )
 }
