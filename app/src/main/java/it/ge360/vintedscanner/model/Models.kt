@@ -19,6 +19,8 @@ data class Listing(
     val price: Double,
     val shipping: Double = 0.0,
     val marketMedian: Double? = null,
+    val marketSampleCount: Int = 0,
+    val marketConfidence: Int = 0,
     val url: String,
     val imageUrl: String? = null,
     val condition: String? = null,
@@ -28,13 +30,16 @@ data class Listing(
     val lastSeenAt: Long = System.currentTimeMillis(),
     val score: Int = 0,
     val estimatedMargin: Double? = null,
+    val preferenceBoost: Int = 0,
     val riskFlags: List<String> = emptyList(),
-    val favorite: Boolean = false
+    val favorite: Boolean = false,
+    val feedback: Int = 0
 )
 
 data class OpportunityScore(
     val score: Int,
     val estimatedMargin: Double?,
+    val preferenceBoost: Int,
     val riskFlags: List<String>
 )
 
@@ -50,3 +55,16 @@ data class SharedListingDraft(
     val titleGuess: String,
     val priceGuess: Double?
 )
+
+data class MarketEstimate(
+    val median: Double?,
+    val sampleCount: Int,
+    val confidence: Int
+)
+
+data class PreferenceProfile(
+    val tokenWeights: Map<String, Int> = emptyMap()
+) {
+    fun weightFor(tokens: Collection<String>): Int =
+        tokens.sumOf { tokenWeights[it] ?: 0 }
+}
