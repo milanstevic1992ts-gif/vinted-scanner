@@ -490,7 +490,10 @@ private fun ListingCard(
                     style = MaterialTheme.typography.labelMedium
                 )
             }
-            listing.estimatedMargin?.let { Text("Margine stimato: €" + "%.2f".format(it)) }
+            listing.estimatedMargin?.let { Text("Margine netto stimato: €" + "%.2f".format(it)) }
+            if (listing.shipping > 0) {
+                Text("Spese extra considerate: €" + "%.2f".format(listing.shipping), style = MaterialTheme.typography.labelMedium)
+            }
             if (listing.preferenceBoost != 0) {
                 Text(
                     "Preferenze personali: " +
@@ -533,10 +536,11 @@ private fun ListingCard(
 private fun SharedImportDialog(
     draft: SharedListingDraft,
     onDismiss: () -> Unit,
-    onImport: (String, Double?, Double?, String, String?) -> Unit
+    onImport: (String, Double?, Double?, Double?, String, String?) -> Unit
 ) {
     var title by remember(draft.rawText) { mutableStateOf(draft.titleGuess) }
     var price by remember(draft.rawText) { mutableStateOf(draft.priceGuess?.toString().orEmpty()) }
+    var extraCosts by remember(draft.rawText) { mutableStateOf("") }
     var median by remember(draft.rawText) { mutableStateOf("") }
     var url by remember(draft.rawText) { mutableStateOf(draft.url.orEmpty()) }
     var condition by remember(draft.rawText) { mutableStateOf("") }
@@ -554,6 +558,7 @@ private fun SharedImportDialog(
                 Text("Controlla i dati ricevuti. Se lasci vuoto il valore di riferimento, Vinted Scanner proverà a stimarlo dai confronti locali.")
                 TextField(title, { title = it }, label = { Text("Titolo") }, modifier = Modifier.fillMaxWidth())
                 TextField(price, { price = it }, label = { Text("Prezzo €") }, modifier = Modifier.fillMaxWidth())
+                TextField(extraCosts, { extraCosts = it }, label = { Text("Spese extra € (opzionale)") }, modifier = Modifier.fillMaxWidth())
                 TextField(median, { median = it }, label = { Text("Valore di riferimento € (opzionale)") }, modifier = Modifier.fillMaxWidth())
                 TextField(condition, { condition = it }, label = { Text("Condizione / note") }, modifier = Modifier.fillMaxWidth())
                 TextField(url, { url = it }, label = { Text("Link annuncio") }, modifier = Modifier.fillMaxWidth())
@@ -565,6 +570,7 @@ private fun SharedImportDialog(
                     onImport(
                         title,
                         price.toDecimalOrNull(),
+                        extraCosts.toDecimalOrNull(),
                         median.toDecimalOrNull(),
                         url,
                         condition
