@@ -15,7 +15,7 @@ import it.ge360.vintedscanner.model.SourceDiagnostic
 import it.ge360.vintedscanner.model.SourceKind
 import it.ge360.vintedscanner.model.SourceStatus
 
-class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.db", null, 4) {
+class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.db", null, 5) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
             """
@@ -43,6 +43,9 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.
                 market_median REAL,
                 market_sample_count INTEGER NOT NULL DEFAULT 0,
                 market_confidence INTEGER NOT NULL DEFAULT 0,
+                market_similarity INTEGER NOT NULL DEFAULT 0,
+                market_outliers_removed INTEGER NOT NULL DEFAULT 0,
+                comparable_label TEXT,
                 url TEXT NOT NULL,
                 image_url TEXT,
                 condition_text TEXT,
@@ -146,6 +149,11 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.
                 )
                 """.trimIndent()
             )
+        }
+        if (oldVersion < 5) {
+            db.execSQL("ALTER TABLE listings ADD COLUMN market_similarity INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE listings ADD COLUMN market_outliers_removed INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE listings ADD COLUMN comparable_label TEXT")
         }
     }
 
@@ -386,6 +394,9 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.
             listing.marketMedian?.let { put("market_median", it) } ?: putNull("market_median")
             put("market_sample_count", listing.marketSampleCount)
             put("market_confidence", listing.marketConfidence)
+            put("market_similarity", listing.marketSimilarity)
+            put("market_outliers_removed", listing.marketOutliersRemoved)
+            listing.comparableLabel?.let { put("comparable_label", it) } ?: putNull("comparable_label")
             put("url", listing.url)
             listing.imageUrl?.let { put("image_url", it) } ?: putNull("image_url")
             listing.condition?.let { put("condition_text", it) } ?: putNull("condition_text")
@@ -429,6 +440,9 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.
             listing.marketMedian?.let { put("market_median", it) } ?: putNull("market_median")
             put("market_sample_count", listing.marketSampleCount)
             put("market_confidence", listing.marketConfidence)
+            put("market_similarity", listing.marketSimilarity)
+            put("market_outliers_removed", listing.marketOutliersRemoved)
+            listing.comparableLabel?.let { put("comparable_label", it) } ?: putNull("comparable_label")
             put("score", listing.score)
             listing.estimatedMargin?.let { put("estimated_margin", it) } ?: putNull("estimated_margin")
             put("preference_boost", listing.preferenceBoost)
@@ -586,6 +600,9 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.
             marketMedian = doubleOrNull("market_median"),
             marketSampleCount = getInt(getColumnIndexOrThrow("market_sample_count")),
             marketConfidence = getInt(getColumnIndexOrThrow("market_confidence")),
+            marketSimilarity = getInt(getColumnIndexOrThrow("market_similarity")),
+            marketOutliersRemoved = getInt(getColumnIndexOrThrow("market_outliers_removed")),
+            comparableLabel = stringOrNull("comparable_label"),
             url = getString(getColumnIndexOrThrow("url")),
             imageUrl = stringOrNull("image_url"),
             condition = stringOrNull("condition_text"),
