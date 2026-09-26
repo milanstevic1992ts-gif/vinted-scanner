@@ -1,12 +1,19 @@
 package it.ge360.vintedscanner.data
 
+import it.ge360.vintedscanner.domain.CalibrationAnalyzer
+import it.ge360.vintedscanner.domain.DealRanker
 import it.ge360.vintedscanner.domain.MarketEstimator
 import it.ge360.vintedscanner.domain.OpportunityScorer
 import it.ge360.vintedscanner.domain.PreferenceEngine
+import it.ge360.vintedscanner.model.CalibrationReview
+import it.ge360.vintedscanner.model.CalibrationSession
+import it.ge360.vintedscanner.model.CalibrationSummary
+import it.ge360.vintedscanner.model.EstimateVerdict
 import it.ge360.vintedscanner.model.FeedbackEvent
 import it.ge360.vintedscanner.model.FeedbackReason
 import it.ge360.vintedscanner.model.Listing
 import it.ge360.vintedscanner.model.PreferenceProfile
+import it.ge360.vintedscanner.model.RankingVerdict
 import it.ge360.vintedscanner.model.PricePoint
 import it.ge360.vintedscanner.model.SavedSearch
 import it.ge360.vintedscanner.model.SourceDiagnostic
@@ -112,6 +119,85 @@ class ScannerRepository(
 
     suspend fun priceHistory(listingId: String): List<PricePoint> = withContext(Dispatchers.IO) {
         database.getPriceHistory(listingId)
+    }
+
+    suspend fun calibrationSession(): CalibrationSession? = withContext(Dispatchers.IO) {
+        database.getActiveCalibrationSession() ?: database.getLatestCalibrationSession()
+    }
+
+    suspend fun calibrationSummary(): CalibrationSummary = withContext(Dispatchers.IO) {
+        val session = database.getActiveCalibrationSession() ?: database.getLatestCalibrationSession()
+        if (session == null) {
+            CalibrationSummary(sessionId = null)
+        } else {
+            CalibrationAnalyzer.summarize(
+                sessionId = session.id,
+                reviews = database.getCalibrationReviews(session.id),
+                targetCount = session.targetCount
+            )
+        }
+    }
+
+    suspend fun startCalibration(targetCount: Int = 25): CalibrationSession =
+        withContext(Dispatchers.IO) {
+            database.startCalibrationSession(targetCount)
+        }
+
+    suspend fun completeCalibration() = withContext(Dispatchers.IO) {
+        database.getActiveCalibrationSession()?.let {
+            database.completeCalibrationSession(it.id)
+        }
+    }
+
+    suspend fun saveCalibrationReview(
+        listingId: String,
+        signatureCorrect: Boolean,
+        estimateVerdict: EstimateVerdict,
+        rankingVerdict: RankingVerdict,
+        expectedValue: Double?,
+        notes: String?
+    ) = withContext(Dispatchers.IO) {
+        val session = database.getActiveCalibrationSession() ?: return@withContext
+        val listing = database.getListing(listingId) ?: return@withContext
+        val profile = database.getPreferenceProfile()
+        val deal = DealRanker.evaluate(listing = listing, profile = profile)
+
+        database.saveCalibrationReview(
+            CalibrationReview(
+                id = 0,
+                sessionId = session.id,
+                listingId = listing.id,
+                title = listing.title,
+                createdAt = System.currentTimeMillis(),
+                signatureCorrect = signatureCorrect,
+                estimateVerdict = estimateVerdict,
+                rankingVerdict = rankingVerdict,
+                expectedValue = expectedValue,
+                observedMedian = listing.marketMedian,
+                marketConfidence = listing.marketConfidence,
+                marketSimilarity = listing.marketSimilarity,
+                dealIndex = deal.dealIndex,
+                score = listing.score,
+                estimatedMargin = listing.estimatedMargin,
+                notes = notes?.trim()?.takeIf(String::isNotBlank)
+            )
+        )
+    }
+
+    suspend fun calibrationReportJson(): String? = withContext(Dispatchers.IO) {
+        val session = database.getActiveCalibrationSession() ?: database.getLatestCalibrationSession()
+            ?: return@withContext null
+        val reviews = database.getCalibrationReviews(session.id)
+        val summary = CalibrationAnalyzer.summarize(
+            sessionId = session.id,
+            reviews = reviews,
+            targetCount = session.targetCount
+        )
+        CalibrationReportExporter.toJson(
+            session = session.copy(reviewedCount = reviews.size),
+            summary = summary,
+            reviews = reviews
+        )
     }
 
     suspend fun importSharedListing(
