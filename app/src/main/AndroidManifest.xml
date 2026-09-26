@@ -31,5 +31,15 @@
             android:name=".live.LiveScannerService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <service
+            android:name=".sources.VintedNotificationListenerService"
+            android:exported="true"
+            android:label="Vinted Scanner · Notifiche Vinted"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
     </application>
 </manifest>
