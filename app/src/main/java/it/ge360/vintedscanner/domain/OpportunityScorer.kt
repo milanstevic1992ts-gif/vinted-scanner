@@ -14,8 +14,10 @@ object OpportunityScorer {
         val median = listing.marketMedian
         val totalCost = listing.price + listing.shipping
         val margin = median?.minus(totalCost)
-        val normalizedTitle = listing.title.lowercase()
-        val risks = riskTerms.filter(normalizedTitle::contains)
+        val searchable = listOfNotNull(listing.title, listing.condition)
+            .joinToString(" ")
+            .lowercase()
+        val risks = riskTerms.filter(searchable::contains)
 
         var points = 50
         if (median != null && median > 0) {
