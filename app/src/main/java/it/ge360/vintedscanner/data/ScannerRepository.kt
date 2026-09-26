@@ -209,11 +209,17 @@ class ScannerRepository(
 
     private fun syncConfigurationState() {
         val byId = sources.associateBy { it.descriptor.id }
+        val diagnostics = database.getSourceDiagnostics().associateBy { it.descriptor.id }
+
         SourceCatalog.defaults.forEach { descriptor ->
+            val current = diagnostics[descriptor.id]
+            if (current?.enabled == false) return@forEach
+
             val source = byId[descriptor.id]
             when {
                 descriptor.id == SourceCatalog.ANDROID_SHARE_ID -> Unit
-                source == null || !source.isConfigured() -> database.markSourceNotConfigured(descriptor.id)
+                source == null || !source.isConfigured() ->
+                    database.markSourceNotConfigured(descriptor.id)
             }
         }
     }
