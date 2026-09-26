@@ -10,8 +10,12 @@ import it.ge360.vintedscanner.model.Listing
 import it.ge360.vintedscanner.model.PreferenceProfile
 import it.ge360.vintedscanner.model.PricePoint
 import it.ge360.vintedscanner.model.SavedSearch
+import it.ge360.vintedscanner.model.SourceDescriptor
+import it.ge360.vintedscanner.model.SourceDiagnostic
+import it.ge360.vintedscanner.model.SourceKind
+import it.ge360.vintedscanner.model.SourceStatus
 
-class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.db", null, 3) {
+class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.db", null, 4) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
             """
@@ -74,6 +78,25 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.
             )
             """.trimIndent()
         )
+        db.execSQL(
+            """
+            CREATE TABLE source_diagnostics (
+                source_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                supports_auto INTEGER NOT NULL DEFAULT 0,
+                requires_config INTEGER NOT NULL DEFAULT 0,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                status TEXT NOT NULL,
+                last_event_at INTEGER,
+                last_scan_at INTEGER,
+                last_success_at INTEGER,
+                last_received_count INTEGER NOT NULL DEFAULT 0,
+                total_received INTEGER NOT NULL DEFAULT 0,
+                last_error TEXT
+            )
+            """.trimIndent()
+        )
         db.execSQL("CREATE INDEX idx_listings_search_id ON listings(search_id)")
         db.execSQL("CREATE INDEX idx_listings_score ON listings(score DESC)")
         db.execSQL("CREATE INDEX idx_price_history_listing ON price_history(listing_id, seen_at DESC)")
@@ -103,6 +126,173 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.
                 "CREATE TABLE IF NOT EXISTS preference_weights (token TEXT PRIMARY KEY, weight INTEGER NOT NULL, updated_at INTEGER NOT NULL)"
             )
         }
+        if (oldVersion < 4) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS source_diagnostics (
+                    source_id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    supports_auto INTEGER NOT NULL DEFAULT 0,
+                    requires_config INTEGER NOT NULL DEFAULT 0,
+                    enabled INTEGER NOT NULL DEFAULT 1,
+                    status TEXT NOT NULL,
+                    last_event_at INTEGER,
+                    last_scan_at INTEGER,
+                    last_success_at INTEGER,
+                    last_received_count INTEGER NOT NULL DEFAULT 0,
+                    total_received INTEGER NOT NULL DEFAULT 0,
+                    last_error TEXT
+                )
+                """.trimIndent()
+            )
+        }
+    }
+
+    fun ensureSources(descriptors: List<SourceDescriptor>) {
+        val db = writableDatabase
+        descriptors.forEach { descriptor ->
+            val exists = readableDatabase.rawQuery(
+                "SELECT 1 FROM source_diagnostics WHERE source_id = ?",
+                arrayOf(descriptor.id)
+            ).use { it.moveToFirst() }
+
+            if (!exists) {
+                val initialStatus = when {
+                    descriptor.requiresConfiguration -> SourceStatus.NOT_CONFIGURED
+                    else -> SourceStatus.READY
+                }
+                val values = ContentValues().apply {
+                    put("source_id", descriptor.id)
+                    put("name", descriptor.name)
+                    put("kind", descriptor.kind.name)
+                    put("supports_auto", if (descriptor.supportsAutomaticScan) 1 else 0)
+                    put("requires_config", if (descriptor.requiresConfiguration) 1 else 0)
+                    put("enabled", 1)
+                    put("status", initialStatus.name)
+                    put("last_received_count", 0)
+                    put("total_received", 0)
+                }
+                db.insertWithOnConflict(
+                    "source_diagnostics",
+                    null,
+                    values,
+                    SQLiteDatabase.CONFLICT_IGNORE
+                )
+            } else {
+                val values = ContentValues().apply {
+                    put("name", descriptor.name)
+                    put("kind", descriptor.kind.name)
+                    put("supports_auto", if (descriptor.supportsAutomaticScan) 1 else 0)
+                    put("requires_config", if (descriptor.requiresConfiguration) 1 else 0)
+                }
+                db.update("source_diagnostics", values, "source_id = ?", arrayOf(descriptor.id))
+            }
+        }
+    }
+
+    fun getSourceDiagnostics(): List<SourceDiagnostic> {
+        val out = mutableListOf<SourceDiagnostic>()
+        readableDatabase.rawQuery(
+            "SELECT * FROM source_diagnostics ORDER BY source_id",
+            null
+        ).use { c ->
+            while (c.moveToNext()) {
+                val descriptor = SourceDescriptor(
+                    id = c.getString(c.getColumnIndexOrThrow("source_id")),
+                    name = c.getString(c.getColumnIndexOrThrow("name")),
+                    kind = SourceKind.valueOf(c.getString(c.getColumnIndexOrThrow("kind"))),
+                    supportsAutomaticScan = c.getInt(c.getColumnIndexOrThrow("supports_auto")) == 1,
+                    requiresConfiguration = c.getInt(c.getColumnIndexOrThrow("requires_config")) == 1
+                )
+                out += SourceDiagnostic(
+                    descriptor = descriptor,
+                    enabled = c.getInt(c.getColumnIndexOrThrow("enabled")) == 1,
+                    status = SourceStatus.valueOf(c.getString(c.getColumnIndexOrThrow("status"))),
+                    lastEventAt = c.longOrNull("last_event_at"),
+                    lastScanAt = c.longOrNull("last_scan_at"),
+                    lastSuccessAt = c.longOrNull("last_success_at"),
+                    lastReceivedCount = c.getInt(c.getColumnIndexOrThrow("last_received_count")),
+                    totalReceived = c.getLong(c.getColumnIndexOrThrow("total_received")),
+                    lastError = c.stringOrNull("last_error")
+                )
+            }
+        }
+        return out
+    }
+
+    fun setSourceEnabled(sourceId: String, enabled: Boolean) {
+        val values = ContentValues().apply {
+            put("enabled", if (enabled) 1 else 0)
+            put("status", if (enabled) SourceStatus.IDLE.name else SourceStatus.DISABLED.name)
+            put("last_event_at", System.currentTimeMillis())
+            putNull("last_error")
+        }
+        writableDatabase.update("source_diagnostics", values, "source_id = ?", arrayOf(sourceId))
+    }
+
+    fun markSourceScanning(sourceId: String) {
+        val now = System.currentTimeMillis()
+        val values = ContentValues().apply {
+            put("status", SourceStatus.SCANNING.name)
+            put("last_event_at", now)
+            put("last_scan_at", now)
+            putNull("last_error")
+        }
+        writableDatabase.update("source_diagnostics", values, "source_id = ?", arrayOf(sourceId))
+    }
+
+    fun markSourceSuccess(sourceId: String, receivedCount: Int) {
+        val now = System.currentTimeMillis()
+        writableDatabase.beginTransaction()
+        try {
+            val currentTotal = readableDatabase.rawQuery(
+                "SELECT total_received FROM source_diagnostics WHERE source_id = ?",
+                arrayOf(sourceId)
+            ).use { c -> if (c.moveToFirst()) c.getLong(0) else 0L }
+
+            val values = ContentValues().apply {
+                put("status", SourceStatus.READY.name)
+                put("last_event_at", now)
+                put("last_success_at", now)
+                put("last_received_count", receivedCount)
+                put("total_received", currentTotal + receivedCount)
+                putNull("last_error")
+            }
+            writableDatabase.update(
+                "source_diagnostics",
+                values,
+                "source_id = ?",
+                arrayOf(sourceId)
+            )
+            writableDatabase.setTransactionSuccessful()
+        } finally {
+            writableDatabase.endTransaction()
+        }
+    }
+
+    fun markSourceNotConfigured(sourceId: String) {
+        val values = ContentValues().apply {
+            put("status", SourceStatus.NOT_CONFIGURED.name)
+            put("last_event_at", System.currentTimeMillis())
+            put("last_received_count", 0)
+            putNull("last_error")
+        }
+        writableDatabase.update("source_diagnostics", values, "source_id = ?", arrayOf(sourceId))
+    }
+
+    fun markSourceError(sourceId: String, message: String) {
+        val values = ContentValues().apply {
+            put("status", SourceStatus.ERROR.name)
+            put("last_event_at", System.currentTimeMillis())
+            put("last_received_count", 0)
+            put("last_error", message.take(500))
+        }
+        writableDatabase.update("source_diagnostics", values, "source_id = ?", arrayOf(sourceId))
+    }
+
+    fun recordManualSourceImport(sourceId: String, count: Int = 1) {
+        markSourceSuccess(sourceId, count)
     }
 
     fun saveSearch(search: SavedSearch): Long {
