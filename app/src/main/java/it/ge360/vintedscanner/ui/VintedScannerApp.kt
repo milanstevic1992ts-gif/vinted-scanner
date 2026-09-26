@@ -462,6 +462,41 @@ private fun Dashboard(
         }
 
         item {
+            Card(
+                Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp)
+            ) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(16.dp)
+                ) {
+                    Text(
+                        "Feedback recenti",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (state.feedbackEvents.isEmpty()) {
+                        Text("Nessun feedback motivato ancora.")
+                    } else {
+                        state.feedbackEvents.take(3).forEach { event ->
+                            Row(Modifier.fillMaxWidth()) {
+                                Text(
+                                    event.title.take(30),
+                                    modifier = Modifier.weight(1f),
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                Text(
+                                    feedbackReasonLabel(event.reason),
+                                    style = MaterialTheme.typography.labelMedium
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
             val readyCount = state.sourceDiagnostics.count { it.status == SourceStatus.READY }
             val errorCount = state.sourceDiagnostics.count { it.status == SourceStatus.ERROR }
             Card(
@@ -902,6 +937,8 @@ private fun ArchiveScreen(
     val filtered = when (filter) {
         1 -> listings.filter { it.favorite }
         2 -> listings.filter { it.feedback < 0 }
+        3 -> listings.filter { it.feedbackReason == FeedbackReason.PURCHASED }
+        4 -> listings.filter { it.feedbackReason == FeedbackReason.TOO_EXPENSIVE }
         else -> listings
     }
 
@@ -933,6 +970,18 @@ private fun ArchiveScreen(
                     selected = filter == 2,
                     onClick = { filter = 2 },
                     label = { Text("Scartati") }
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = filter == 3,
+                    onClick = { filter = 3 },
+                    label = { Text("Comprati") }
+                )
+                FilterChip(
+                    selected = filter == 4,
+                    onClick = { filter = 4 },
+                    label = { Text("Troppo cari") }
                 )
             }
         }
