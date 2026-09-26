@@ -234,6 +234,27 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.
         return isNew
     }
 
+    fun updateIntelligence(listing: Listing) {
+        val values = ContentValues().apply {
+            listing.marketMedian?.let { put("market_median", it) } ?: putNull("market_median")
+            put("market_sample_count", listing.marketSampleCount)
+            put("market_confidence", listing.marketConfidence)
+            put("score", listing.score)
+            listing.estimatedMargin?.let { put("estimated_margin", it) } ?: putNull("estimated_margin")
+            put("preference_boost", listing.preferenceBoost)
+            put("risk_flags", listing.riskFlags.joinToString("|"))
+        }
+        writableDatabase.update("listings", values, "id = ?", arrayOf(listing.id))
+    }
+
+    fun getListing(listingId: String): Listing? =
+        readableDatabase.rawQuery(
+            "SELECT * FROM listings WHERE id = ?",
+            arrayOf(listingId)
+        ).use { c ->
+            if (c.moveToFirst()) c.toListing() else null
+        }
+
     fun setFavorite(listingId: String, favorite: Boolean) {
         setListingFeedback(listingId, if (favorite) 1 else 0)
         val values = ContentValues().apply { put("favorite", if (favorite) 1 else 0) }
