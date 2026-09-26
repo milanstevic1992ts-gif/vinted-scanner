@@ -1068,7 +1068,8 @@ private fun Opportunities(
     emptyText: String,
     onFavorite: (Listing) -> Unit,
     onHistory: (Listing) -> Unit,
-    onNotInterested: (Listing) -> Unit
+    onNotInterested: (Listing) -> Unit,
+    onCalibrate: ((Listing) -> Unit)? = null
 ) {
     LazyColumn(
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -1090,7 +1091,8 @@ private fun ArchiveScreen(
     listings: List<Listing>,
     onFavorite: (Listing) -> Unit,
     onHistory: (Listing) -> Unit,
-    onNotInterested: (Listing) -> Unit
+    onNotInterested: (Listing) -> Unit,
+    onCalibrate: ((Listing) -> Unit)? = null
 ) {
     var filter by remember { mutableIntStateOf(0) }
 
