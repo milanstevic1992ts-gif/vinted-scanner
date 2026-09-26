@@ -52,6 +52,18 @@ class ScannerRepository(
         database.getTopListings(favoritesOnly = true)
     }
 
+    suspend fun archive(): List<Listing> = withContext(Dispatchers.IO) {
+        database.getArchiveListings()
+    }
+
+    suspend fun backupJson(): String = withContext(Dispatchers.IO) {
+        BackupExporter.toJson(
+            searches = database.getSearches(),
+            listings = database.getArchiveListings(),
+            profile = database.getPreferenceProfile()
+        )
+    }
+
     suspend fun preferenceProfile(): PreferenceProfile = withContext(Dispatchers.IO) {
         database.getPreferenceProfile()
     }
