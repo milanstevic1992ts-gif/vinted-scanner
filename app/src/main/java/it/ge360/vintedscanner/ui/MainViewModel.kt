@@ -13,6 +13,7 @@ import it.ge360.vintedscanner.model.PreferenceProfile
 import it.ge360.vintedscanner.model.PricePoint
 import it.ge360.vintedscanner.model.SavedSearch
 import it.ge360.vintedscanner.model.SharedListingDraft
+import it.ge360.vintedscanner.model.SourceDiagnostic
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -29,7 +30,8 @@ data class ScannerUiState(
     val historyTitle: String? = null,
     val loading: Boolean = false,
     val liveMode: Boolean = false,
-    val backupPayload: String? = null
+    val backupPayload: String? = null,
+    val sourceDiagnostics: List<SourceDiagnostic> = emptyList()
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -53,12 +55,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val favorites = repository.favorites()
             val archive = repository.archive()
             val preferenceProfile = repository.preferenceProfile()
+            val sourceDiagnostics = repository.sourceDiagnostics()
             _state.value = _state.value.copy(
                 searches = searches,
                 opportunities = opportunities,
                 favorites = favorites,
                 archive = archive,
                 preferenceProfile = preferenceProfile,
+                sourceDiagnostics = sourceDiagnostics,
                 loading = false
             )
         }
@@ -196,5 +200,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun backupConsumed() {
         _state.value = _state.value.copy(backupPayload = null)
+    }
+
+    fun refreshSources() {
+        viewModelScope.launch {
+            _state.value = _state.value.copy(
+                sourceDiagnostics = repository.refreshSourceDiagnostics()
+            )
+        }
+    }
+
+    fun setSourceEnabled(sourceId: String, enabled: Boolean) {
+        viewModelScope.launch {
+            _state.value = _state.value.copy(
+                sourceDiagnostics = repository.setSourceEnabled(sourceId, enabled)
+            )
+        }
     }
 }
