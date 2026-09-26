@@ -21,6 +21,9 @@ data class Listing(
     val marketMedian: Double? = null,
     val marketSampleCount: Int = 0,
     val marketConfidence: Int = 0,
+    val marketSimilarity: Int = 0,
+    val marketOutliersRemoved: Int = 0,
+    val comparableLabel: String? = null,
     val url: String,
     val imageUrl: String? = null,
     val condition: String? = null,
@@ -59,7 +62,10 @@ data class SharedListingDraft(
 data class MarketEstimate(
     val median: Double?,
     val sampleCount: Int,
-    val confidence: Int
+    val confidence: Int,
+    val similarity: Int = 0,
+    val outliersRemoved: Int = 0,
+    val comparableLabel: String? = null
 )
 
 data class PreferenceProfile(
