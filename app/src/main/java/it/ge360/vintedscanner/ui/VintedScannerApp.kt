@@ -76,7 +76,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import it.ge360.vintedscanner.domain.DealCandidate
 import it.ge360.vintedscanner.domain.DealRanker
+import it.ge360.vintedscanner.model.FeedbackReason
 import it.ge360.vintedscanner.model.Listing
+import it.ge360.vintedscanner.model.PreferenceProfile
 import it.ge360.vintedscanner.model.PricePoint
 import it.ge360.vintedscanner.model.SavedSearch
 import it.ge360.vintedscanner.model.SharedListingDraft
@@ -96,6 +98,7 @@ fun VintedScannerApp(viewModel: MainViewModel) {
     var tab by remember { mutableIntStateOf(0) }
     var createRequest by remember { mutableStateOf(false) }
     var sourceDialogOpen by remember { mutableStateOf(false) }
+    var feedbackTarget by remember { mutableStateOf<Listing?>(null) }
 
     val backupPayload = state.backupPayload
     val backupLauncher = rememberLauncherForActivityResult(
@@ -131,6 +134,17 @@ fun VintedScannerApp(viewModel: MainViewModel) {
             title = state.historyTitle.orEmpty(),
             history = state.priceHistory,
             onDismiss = viewModel::closeHistory
+        )
+    }
+
+    feedbackTarget?.let { listing ->
+        FeedbackReasonDialog(
+            listing = listing,
+            onDismiss = { feedbackTarget = null },
+            onSelect = { reason ->
+                viewModel.setFeedback(listing, reason)
+                feedbackTarget = null
+            }
         )
     }
 
@@ -226,7 +240,7 @@ fun VintedScannerApp(viewModel: MainViewModel) {
                         state = state,
                         onFavorite = viewModel::toggleFavorite,
                         onHistory = viewModel::showHistory,
-                        onNotInterested = viewModel::notInterested,
+                        onNotInterested = { feedbackTarget = it },
                         onLiveChange = viewModel::setLiveMode,
                         onBackup = viewModel::prepareBackup,
                         onSources = {
@@ -243,22 +257,23 @@ fun VintedScannerApp(viewModel: MainViewModel) {
                     )
                     2 -> DealCenterScreen(
                         listings = state.opportunities,
+                        profile = state.preferenceProfile,
                         onFavorite = viewModel::toggleFavorite,
                         onHistory = viewModel::showHistory,
-                        onNotInterested = viewModel::notInterested
+                        onNotInterested = { feedbackTarget = it }
                     )
                     3 -> ArchiveScreen(
                         listings = state.archive,
                         onFavorite = viewModel::toggleFavorite,
                         onHistory = viewModel::showHistory,
-                        onNotInterested = viewModel::notInterested
+                        onNotInterested = { feedbackTarget = it }
                     )
                     else -> Opportunities(
                         listings = state.favorites,
                         emptyText = "La watchlist è vuota. Tocca il cuore su un annuncio.",
                         onFavorite = viewModel::toggleFavorite,
                         onHistory = viewModel::showHistory,
-                        onNotInterested = viewModel::notInterested
+                        onNotInterested = { feedbackTarget = it }
                     )
                 }
             }
@@ -408,15 +423,39 @@ private fun Dashboard(
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
-                    if (learned.isEmpty()) {
-                        Text("Ancora neutrale. Cuore e “Non mi interessa” fanno imparare l'app.")
+                    if (learned.isEmpty() &&
+                        state.preferenceProfile.purchasedCount == 0 &&
+                        state.preferenceProfile.discardedCount == 0
+                    ) {
+                        Text("Ancora neutrale. Usa i feedback motivati per far imparare l'app.")
                     } else {
+                        if (learned.isNotEmpty()) {
+                            Text(
+                                learned.joinToString(" · ") { entry ->
+                                    entry.key + " " +
+                                        if (entry.value >= 0) "+" + entry.value else entry.value.toString()
+                                }
+                            )
+                        }
                         Text(
-                            learned.joinToString(" · ") { entry ->
-                                entry.key + " " +
-                                    if (entry.value >= 0) "+" + entry.value else entry.value.toString()
-                            }
+                            "Comprati " + state.preferenceProfile.purchasedCount +
+                                " · Scartati " + state.preferenceProfile.discardedCount +
+                                " · Troppo cari " + state.preferenceProfile.tooExpensiveCount,
+                            style = MaterialTheme.typography.bodySmall
                         )
+                        Text(
+                            "Condizioni pessime " + state.preferenceProfile.badConditionCount +
+                                " · Modello sbagliato " + state.preferenceProfile.wrongModelCount,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        state.preferenceProfile.averageTooExpensiveRatio?.let { ratio ->
+                            Text(
+                                "Soglia appresa “troppo caro”: circa " +
+                                    "%.0f".format(ratio * 100) + "% del valore osservato",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
                 }
             }
@@ -691,6 +730,7 @@ private fun SearchCard(
 @Composable
 private fun DealCenterScreen(
     listings: List<Listing>,
+    profile: PreferenceProfile,
     onFavorite: (Listing) -> Unit,
     onHistory: (Listing) -> Unit,
     onNotInterested: (Listing) -> Unit
@@ -698,7 +738,9 @@ private fun DealCenterScreen(
     var filter by remember { mutableIntStateOf(0) }
     var sort by remember { mutableIntStateOf(0) }
 
-    val ranked = remember(listings) { DealRanker.rank(listings) }
+    val ranked = remember(listings, profile) {
+        DealRanker.rank(listings = listings, profile = profile)
+    }
 
     val filtered = when (filter) {
         1 -> ranked.filter { it.dealIndex >= 80 }
@@ -1051,6 +1093,18 @@ private fun ListingCard(
 
             listing.condition?.let { Text("Condizione: $it") }
 
+            if (listing.feedbackReason != FeedbackReason.NONE) {
+                Text(
+                    "Feedback: " + feedbackReasonLabel(listing.feedbackReason),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = when (listing.feedbackReason.polarity) {
+                        1 -> MaterialTheme.colorScheme.primary
+                        -1 -> MaterialTheme.colorScheme.error
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
+            }
+
             if (listing.riskFlags.isNotEmpty()) {
                 Text(
                     "Attenzione: " + listing.riskFlags.joinToString(),
@@ -1091,6 +1145,68 @@ private fun ListingCard(
             }
         }
     }
+}
+
+@Composable
+private fun FeedbackReasonDialog(
+    listing: Listing,
+    onDismiss: () -> Unit,
+    onSelect: (FeedbackReason) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Perché?") },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    listing.title,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    "Il motivo cambia ciò che Vinted Scanner impara. Prezzo e condizioni non penalizzano automaticamente marca o modello.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Button(
+                    onClick = { onSelect(FeedbackReason.PURCHASED) },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("COMPRATO") }
+
+                OutlinedButton(
+                    onClick = { onSelect(FeedbackReason.TOO_EXPENSIVE) },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("TROPPO CARO") }
+
+                OutlinedButton(
+                    onClick = { onSelect(FeedbackReason.BAD_CONDITION) },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("CONDIZIONI PESSIME") }
+
+                OutlinedButton(
+                    onClick = { onSelect(FeedbackReason.WRONG_MODEL) },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("MODELLO SBAGLIATO") }
+
+                OutlinedButton(
+                    onClick = { onSelect(FeedbackReason.DISCARDED) },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("SCARTATO") }
+
+                if (listing.feedbackReason != FeedbackReason.NONE) {
+                    TextButton(
+                        onClick = { onSelect(FeedbackReason.NONE) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("AZZERA FEEDBACK") }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("ANNULLA") }
+        }
+    )
 }
 
 @Composable
@@ -1408,6 +1524,17 @@ private fun sourceStatusLabel(status: SourceStatus): String =
         SourceStatus.NOT_CONFIGURED -> "Non configurata"
         SourceStatus.ERROR -> "Errore"
         SourceStatus.DISABLED -> "Disattivata"
+    }
+
+private fun feedbackReasonLabel(reason: FeedbackReason): String =
+    when (reason) {
+        FeedbackReason.NONE -> "Nessuno"
+        FeedbackReason.FAVORITE -> "Interessante"
+        FeedbackReason.PURCHASED -> "Comprato"
+        FeedbackReason.DISCARDED -> "Scartato"
+        FeedbackReason.TOO_EXPENSIVE -> "Troppo caro"
+        FeedbackReason.BAD_CONDITION -> "Condizioni pessime"
+        FeedbackReason.WRONG_MODEL -> "Modello sbagliato"
     }
 
 private fun sourceKindLabel(kind: SourceKind): String =
