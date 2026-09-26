@@ -17,6 +17,16 @@ class SharedListingParserTest {
     }
 
     @Test
+    fun parsesVintedDeepLinkFromNotificationText() {
+        val draft = SharedListingParser.parse(
+            "Festool ETS EC 150\n149,90 €\nvinted://item/12345"
+        )
+
+        assertEquals("vinted://item/12345", draft.url)
+        assertEquals(149.90, draft.priceGuess ?: 0.0, 0.001)
+    }
+
+    @Test
     fun stableIdNormalizesFragmentAndTrailingSlash() {
         val a = SharedListingParser.stableId("https://www.vinted.it/items/123-test/")
         val b = SharedListingParser.stableId("https://www.vinted.it/items/123-test/#photo")
