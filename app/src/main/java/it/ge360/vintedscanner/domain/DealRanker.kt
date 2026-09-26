@@ -100,11 +100,6 @@ object DealRanker {
         }
 
         when {
-            marginRatio >= 40 -> reasons += "Prezzo molto sotto il valore osservato"
-            marginRatio >= 25 -> reasons += "Prezzo sotto i comparabili"
-        }
-
-        when {
             listing.marketConfidence >= 80 && listing.marketSimilarity >= 75 ->
                 reasons += "Comparabili molto solidi"
             listing.marketConfidence >= 65 ->
@@ -116,13 +111,18 @@ object DealRanker {
             freshness >= 65 -> reasons += "Annuncio recente"
         }
 
+        when {
+            marginRatio >= 40 -> reasons += "Prezzo molto sotto il valore osservato"
+            marginRatio >= 25 -> reasons += "Prezzo sotto i comparabili"
+        }
+
         if (listing.marketOutliersRemoved > 0) {
             reasons += "Outlier esclusi dalla stima"
         }
 
-        if (listing.riskFlags.isNotEmpty()) {
-            reasons += "Presenti segnali di rischio"
-        }
+        val riskReason = if (listing.riskFlags.isNotEmpty()) {
+            "Presenti segnali di rischio"
+        } else null
 
         if (reasons.isEmpty()) {
             reasons += when {
@@ -132,6 +132,14 @@ object DealRanker {
             }
         }
 
-        return reasons.distinct().take(3)
-    }
-}
+        val top = reasons.distinct().take(3).toMutableList()
+        if (riskReason != null && riskReason !in top) {
+            if (top.size >= 3) {
+                top[top.lastIndex] = riskReason
+            } else {
+                top += riskReason
+            }
+        }
+
+        return top
+    }}
