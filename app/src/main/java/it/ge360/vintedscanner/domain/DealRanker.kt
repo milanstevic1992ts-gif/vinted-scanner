@@ -1,5 +1,6 @@
 package it.ge360.vintedscanner.domain
 
+import it.ge360.vintedscanner.model.FeedbackReason
 import it.ge360.vintedscanner.model.Listing
 import it.ge360.vintedscanner.model.PreferenceProfile
 import kotlin.math.roundToInt
@@ -21,7 +22,7 @@ object DealRanker {
         profile: PreferenceProfile = PreferenceProfile()
     ): List<DealCandidate> =
         listings
-            .filter { it.feedback >= 0 }
+            .filter { it.feedback >= 0 && it.feedbackReason != FeedbackReason.PURCHASED }
             .map { evaluate(it, now, profile) }
             .sortedWith(
                 compareByDescending<DealCandidate> { it.dealIndex }
