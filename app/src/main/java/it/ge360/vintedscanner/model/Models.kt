@@ -36,7 +36,8 @@ data class Listing(
     val preferenceBoost: Int = 0,
     val riskFlags: List<String> = emptyList(),
     val favorite: Boolean = false,
-    val feedback: Int = 0
+    val feedback: Int = 0,
+    val feedbackReason: FeedbackReason = FeedbackReason.NONE
 )
 
 data class OpportunityScore(
@@ -68,12 +69,45 @@ data class MarketEstimate(
     val comparableLabel: String? = null
 )
 
+enum class FeedbackReason {
+    NONE,
+    FAVORITE,
+    PURCHASED,
+    DISCARDED,
+    TOO_EXPENSIVE,
+    BAD_CONDITION,
+    WRONG_MODEL;
+
+    val polarity: Int
+        get() = when (this) {
+            NONE -> 0
+            FAVORITE, PURCHASED -> 1
+            DISCARDED, TOO_EXPENSIVE, BAD_CONDITION, WRONG_MODEL -> -1
+        }
+}
+
 data class PreferenceProfile(
-    val tokenWeights: Map<String, Int> = emptyMap()
+    val tokenWeights: Map<String, Int> = emptyMap(),
+    val purchasedCount: Int = 0,
+    val discardedCount: Int = 0,
+    val tooExpensiveCount: Int = 0,
+    val badConditionCount: Int = 0,
+    val wrongModelCount: Int = 0,
+    val averageTooExpensiveRatio: Double? = null
 ) {
     fun weightFor(tokens: Collection<String>): Int =
         tokens.sumOf { tokenWeights[it] ?: 0 }
 }
+
+data class FeedbackEvent(
+    val id: Long,
+    val listingId: String,
+    val reason: FeedbackReason,
+    val createdAt: Long,
+    val title: String,
+    val price: Double,
+    val marketMedian: Double?
+)
 
 enum class SourceKind {
     MANUAL_SHARE,
