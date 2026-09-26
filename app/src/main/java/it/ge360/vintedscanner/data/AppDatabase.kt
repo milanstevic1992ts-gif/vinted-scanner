@@ -506,7 +506,12 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.
     fun setFavorite(listingId: String, favorite: Boolean) {
         val current = getListing(listingId) ?: return
         if (favorite) {
-            setFeedbackReason(listingId, FeedbackReason.FAVORITE)
+            if (current.feedbackReason == FeedbackReason.PURCHASED) {
+                val values = ContentValues().apply { put("favorite", 1) }
+                writableDatabase.update("listings", values, "id = ?", arrayOf(listingId))
+            } else {
+                setFeedbackReason(listingId, FeedbackReason.FAVORITE)
+            }
         } else {
             val nextReason = if (current.feedbackReason == FeedbackReason.FAVORITE) {
                 FeedbackReason.NONE
