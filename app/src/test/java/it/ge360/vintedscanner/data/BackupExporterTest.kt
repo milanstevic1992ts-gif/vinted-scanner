@@ -1,5 +1,6 @@
 package it.ge360.vintedscanner.data
 
+import it.ge360.vintedscanner.model.FeedbackReason
 import it.ge360.vintedscanner.model.Listing
 import it.ge360.vintedscanner.model.PreferenceProfile
 import it.ge360.vintedscanner.model.SavedSearch
@@ -26,17 +27,27 @@ class BackupExporterTest {
                     title = "Nike Air Max 95",
                     price = 45.0,
                     url = "https://example.invalid/item",
-                    favorite = true
+                    favorite = true,
+                    feedback = 1,
+                    feedbackReason = FeedbackReason.PURCHASED
                 )
             ),
-            profile = PreferenceProfile(mapOf("nike" to 4)),
+            profile = PreferenceProfile(
+                tokenWeights = mapOf("nike" to 4),
+                purchasedCount = 1,
+                tooExpensiveCount = 2,
+                averageTooExpensiveRatio = 0.72
+            ),
             generatedAt = 0L
         )
 
         assertTrue(json.contains("\"format\": \"vinted-scanner-backup\""))
-        assertTrue(json.contains("\"version\": 1"))
+        assertTrue(json.contains("\"version\": 2"))
         assertTrue(json.contains("Nike Air Max 95"))
         assertTrue(json.contains("\"favorite\":true"))
         assertTrue(json.contains("\"nike\":4"))
+        assertTrue(json.contains("\"feedbackReason\":\"PURCHASED\""))
+        assertTrue(json.contains("\"purchasedCount\":1"))
+        assertTrue(json.contains("\"averageTooExpensiveRatio\":0.72"))
     }
 }
