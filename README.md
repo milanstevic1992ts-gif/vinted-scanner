@@ -1,73 +1,91 @@
 # Vinted Scanner
 
-Android-first scanner per monitorare ricerche salvate, confrontare annunci e individuare rapidamente possibili occasioni.
+APK Android standalone per raccogliere annunci condivisi dal telefono, confrontarli, stimare il valore osservato e individuare possibili occasioni senza dipendere da un server esterno.
 
-## Obiettivo
+## Stato attuale
 
-- APK standalone: nessun server Debian necessario
-- dati e storico salvati localmente sul telefono
-- scansioni periodiche tramite WorkManager
-- modalità live progettata separatamente
-- apertura dell'annuncio nell'app/sito Vinted
-- motore di scoring trasparente: prezzo, freschezza, condizioni, margine stimato e segnali di rischio
-
-> Il progetto non include credenziali, bypass, automazioni di acquisto o meccanismi per aggirare limiti della piattaforma.
-
-## Stack
-
-- Kotlin
-- Jetpack Compose
-- Material 3
-- SQLite locale
-- WorkManager
-- Android 7.0+ (minSdk 24)
-
-## Roadmap
+Versione applicazione: **0.3.0**
 
 ### Fase 1 — Fondazioni
-- [x] struttura Android
-- [x] dashboard Compose
-- [x] modello ricerche
-- [x] archivio locale
+- [x] progetto Android nativo Kotlin + Jetpack Compose
+- [x] SQLite locale
+- [x] dashboard
+- [x] ricerche salvate
+- [x] WorkManager periodico
 - [x] scoring locale
-- [x] worker periodico
-- [x] importazione annunci via Condividi Android\n- [ ] connettore remoto autorizzato
+- [x] importazione annunci via Condividi Android
+- [ ] connettore remoto autorizzato
 
 ### Fase 2 — Scanner
-- [ ] creazione/modifica ricerca
-- [ ] filtri prezzo/taglia/marca/condizione
-- [ ] deduplicazione annunci
-- [ ] storico prezzi
-- [ ] notifiche occasione
+- [x] creazione/modifica/eliminazione ricerca
+- [x] pausa/riattivazione ricerca
+- [x] filtri prezzo/taglia/marca/condizione
+- [x] apertura ricerca su Vinted
+- [x] deduplicazione annunci
+- [x] storico prezzi locale
+- [x] notifiche occasione
+- [x] watchlist/preferiti
 
 ### Fase 3 — Intelligence
-- [ ] stima prezzo osservato
-- [ ] margine netto stimato
-- [ ] rilevazione parole di rischio nella descrizione
-- [ ] preferenze per categorie e brand
-- [ ] apprendimento locale dalle decisioni dell'utente
+- [x] tokenizzazione locale di titoli e note
+- [x] confronto per similarità
+- [x] mediana robusta dei prezzi comparabili
+- [x] numero campioni e confidenza della stima
+- [x] margine netto stimato con spese extra
+- [x] rilevazione parole/segnali di rischio
+- [x] apprendimento locale da preferiti
+- [x] feedback negativo "Non mi interessa"
+- [x] boost/malus personale trasparente
+- [x] test automatici del motore Intelligence
 
 ### Fase 4 — Premium UX
 - [ ] dashboard avanzata
 - [ ] grafici prezzo
-- [ ] watchlist
+- [ ] pagina archivio/feedback
 - [ ] modalità live foreground
 - [ ] backup/esportazione locale
+- [ ] rifinitura grafica premium
+
+## Come funziona l'Intelligence locale
+
+Vinted Scanner non inventa un prezzo "AI". Usa gli annunci presenti nel database locale:
+
+1. normalizza il titolo;
+2. cerca annunci con termini sufficientemente simili;
+3. usa una mediana dei prezzi comparabili;
+4. mostra quanti confronti sono stati usati;
+5. calcola una confidenza 0–100;
+6. sottrae prezzo di acquisto e spese extra;
+7. applica rischi testuali e preferenze personali allo score.
+
+Il cuore insegna un segnale positivo. **Non mi interessa** insegna un segnale negativo. I pesi restano nel database locale del telefono.
 
 ## Sorgenti annunci
 
-Il core usa l'interfaccia `ListingSource` per non legare l'app a un endpoint specifico.
+Il core usa l'interfaccia `ListingSource` per evitare di legare l'app a un endpoint fragile.
 
-Connettori previsti:
+Sono previsti:
 - importazione manuale/condivisione da Android;
 - sorgenti autorizzate dall'utente;
-- Vinted Pro Integrations quando l'account è abilitato;
-- nessun bypass di login, anti-bot o protezioni della piattaforma.
+- Vinted Pro Integrations quando l'account è abilitato.
 
-Riferimenti:
-- https://www.vinted.com/terms-and-conditions
-- https://pro-docs.svc.vinted.com/
+Il progetto non include bypass di login, anti-bot, automazioni di acquisto o meccanismi per aggirare protezioni della piattaforma.
 
-## Build
+## Stack
 
-Il progetto usa AGP 9.4, Gradle 9.6, Kotlin 2.4.20 e Compose BOM 2026.09.00.
+- Kotlin / AGP 9 built-in Kotlin
+- Jetpack Compose + Material 3
+- SQLite
+- WorkManager
+- Android 7.0+ (minSdk 24)
+- compileSdk / targetSdk 37
+- Gradle 9.6
+- Compose BOM 2026.09.00
+
+## CI
+
+GitHub Actions esegue:
+- test unitari;
+- build `assembleDebug`;
+- upload dell'APK debug come artifact;
+- stato commit `ci/android`.
