@@ -4,7 +4,7 @@ APK Android standalone per raccogliere annunci condivisi dal telefono, confronta
 
 ## Stato attuale
 
-Versione applicazione: **0.4.0**
+Versione applicazione: **0.5.0**
 
 ### Fase 1 — Fondazioni
 - [x] progetto Android nativo Kotlin + Jetpack Compose
@@ -48,6 +48,20 @@ Versione applicazione: **0.4.0**
 - [x] icona app dedicata
 - [x] rifinitura card, score, confidenza e margine
 
+### Fase 5 — Motore sorgenti annunci
+- [x] interfaccia `ListingSource` separata dal motore Intelligence
+- [x] catalogo sorgenti
+- [x] Condivisione Android tracciata come sorgente reale
+- [x] predisposizione sorgente remota autorizzata
+- [x] diagnostica persistente SQLite
+- [x] stato Pronta / In attesa / Scansione / Non configurata / Errore / Disattivata
+- [x] ultimo evento, ultimo scan e ultimo successo
+- [x] conteggio ultimo giro e totale ricevuti
+- [x] memorizzazione ultimo errore
+- [x] possibilità di disattivare una sorgente automatica
+- [x] pannello Diagnostica Sorgenti nella UI
+- [x] test automatici del catalogo sorgenti
+
 ## Come funziona l'Intelligence locale
 
 Vinted Scanner non inventa un prezzo "AI". Usa gli annunci presenti nel database locale:
@@ -64,12 +78,13 @@ Il cuore insegna un segnale positivo. **Non mi interessa** insegna un segnale ne
 
 ## Sorgenti annunci
 
-Il core usa l'interfaccia `ListingSource` per evitare di legare l'app a un endpoint fragile.
+Il core usa l'interfaccia `ListingSource`, quindi UI, archivio, Intelligence e notifiche non dipendono da uno specifico provider.
 
-Sono previsti:
-- importazione manuale/condivisione da Android;
-- sorgenti autorizzate dall'utente;
-- Vinted Pro Integrations quando l'account è abilitato.
+Sorgenti presenti nella 0.5.0:
+- **Condivisione Android**: attiva e realmente utilizzabile;
+- **Sorgente remota autorizzata**: architettura pronta, ma intenzionalmente marcata `Non configurata` finché non viene collegato un accesso autorizzato reale.
+
+Il pannello Diagnostica Sorgenti mostra stato, ultimo evento, ultimo scan, ultimo successo, quantità ricevute ed eventuali errori.
 
 Il progetto non include bypass di login, anti-bot, automazioni di acquisto o meccanismi per aggirare protezioni della piattaforma.
 
