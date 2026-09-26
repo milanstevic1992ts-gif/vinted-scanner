@@ -566,8 +566,6 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.
     fun markSourceReady(sourceId: String, detail: String? = null) {
         val values = ContentValues().apply {
             put("status", SourceStatus.READY.name)
-            put("last_event_at", System.currentTimeMillis())
-            put("last_received_count", 0)
             detail?.let { put("last_detail", it.take(500)) } ?: putNull("last_detail")
             putNull("last_error")
         }
