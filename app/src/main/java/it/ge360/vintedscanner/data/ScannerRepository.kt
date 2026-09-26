@@ -79,7 +79,8 @@ class ScannerRepository(
         BackupExporter.toJson(
             searches = database.getSearches(),
             listings = database.getArchiveListings(),
-            profile = database.getPreferenceProfile()
+            profile = database.getPreferenceProfile(),
+            feedbackEvents = database.getFeedbackEvents(1000)
         )
     }
 
