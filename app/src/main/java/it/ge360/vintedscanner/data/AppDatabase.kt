@@ -369,6 +369,11 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.
                 "listing_id IN (SELECT id FROM listings WHERE search_id = ?)",
                 arrayOf(id.toString())
             )
+            writableDatabase.delete(
+                "feedback_events",
+                "listing_id IN (SELECT id FROM listings WHERE search_id = ?)",
+                arrayOf(id.toString())
+            )
             writableDatabase.delete("listings", "search_id = ?", arrayOf(id.toString()))
             writableDatabase.delete("searches", "id = ?", arrayOf(id.toString()))
             writableDatabase.setTransactionSuccessful()
@@ -559,7 +564,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.
                 put("feedback_reason", newReason.name)
                 put(
                     "favorite",
-                    if (newReason == FeedbackReason.FAVORITE || newReason == FeedbackReason.PURCHASED) 1 else 0
+                    if (newReason == FeedbackReason.FAVORITE) 1 else 0
                 )
             }
             writableDatabase.update("listings", values, "id = ?", arrayOf(listingId))
