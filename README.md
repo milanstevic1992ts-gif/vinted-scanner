@@ -54,6 +54,20 @@ Android-first scanner per monitorare ricerche salvate, confrontare annunci e ind
 - [ ] modalità live foreground
 - [ ] backup/esportazione locale
 
+## Sorgenti annunci
+
+Il core usa l'interfaccia `ListingSource` per non legare l'app a un endpoint specifico.
+
+Connettori previsti:
+- importazione manuale/condivisione da Android;
+- sorgenti autorizzate dall'utente;
+- Vinted Pro Integrations quando l'account è abilitato;
+- nessun bypass di login, anti-bot o protezioni della piattaforma.
+
+Riferimenti:
+- https://www.vinted.com/terms-and-conditions
+- https://pro-docs.svc.vinted.com/
+
 ## Build
 
 Il progetto usa AGP 9.4, Gradle 9.6 e Compose BOM 2026.09.00.
