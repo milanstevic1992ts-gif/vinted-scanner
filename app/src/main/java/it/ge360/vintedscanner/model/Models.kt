@@ -165,7 +165,7 @@ data class CalibrationSummary(
 enum class SourceKind {
     MANUAL_SHARE,
     VINTED_NOTIFICATIONS,
-    AUTHORIZED_REMOTE
+    VINTED_CATALOG
 }
 
 enum class SourceStatus {
@@ -182,7 +182,8 @@ data class SourceDescriptor(
     val name: String,
     val kind: SourceKind,
     val supportsAutomaticScan: Boolean,
-    val requiresConfiguration: Boolean
+    val requiresConfiguration: Boolean,
+    val defaultEnabled: Boolean = true
 )
 
 data class SourceDiagnostic(
