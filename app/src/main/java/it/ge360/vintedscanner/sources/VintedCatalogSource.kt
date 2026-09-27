@@ -210,10 +210,12 @@ class VintedCatalogSource(
         val match = Regex("""(\d{1,6}(?:[.,]\d{1,2})?)\s*€""")
             .find(text)
             ?: return null
-        return match.groupValues[1]
-            .replace(".", "")
-            .replace(",", ".")
-            .toDoubleOrNull()
+        val raw = match.groupValues[1]
+        return if (raw.contains(",")) {
+            raw.replace(".", "").replace(",", ".").toDoubleOrNull()
+        } else {
+            raw.toDoubleOrNull()
+        }
     }
 
     private fun extractImageUrl(image: Element?): String? {
