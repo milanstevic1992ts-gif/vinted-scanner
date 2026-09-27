@@ -71,7 +71,6 @@ class ScannerRepository(
     }
 
     suspend fun opportunities(): List<Listing> = withContext(Dispatchers.IO) {
-        recomputeIntelligence()
         database.getTopListings()
             .filter { it.feedbackReason != FeedbackReason.PURCHASED }
     }
