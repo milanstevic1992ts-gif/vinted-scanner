@@ -15,6 +15,7 @@ class SourceCatalogTest {
         assertEquals(SourceKind.MANUAL_SHARE, source.kind)
         assertFalse(source.supportsAutomaticScan)
         assertFalse(source.requiresConfiguration)
+        assertTrue(source.defaultEnabled)
     }
 
     @Test
@@ -25,19 +26,20 @@ class SourceCatalogTest {
         assertEquals(SourceKind.VINTED_NOTIFICATIONS, source.kind)
         assertTrue(source.supportsAutomaticScan)
         assertTrue(source.requiresConfiguration)
+        assertTrue(source.defaultEnabled)
         assertEquals("fr.vinted", SourceCatalog.VINTED_ANDROID_PACKAGE)
     }
 
     @Test
-    fun authorizedRemoteIsAutomaticButRequiresConfiguration() {
-        val source = SourceCatalog.authorizedRemote
-        val connector = AuthorizedRemoteSource()
+    fun experimentalCatalogIsAutomaticButDisabledByDefault() {
+        val source = SourceCatalog.vintedCatalog
 
-        assertEquals(SourceCatalog.AUTHORIZED_REMOTE_ID, source.id)
-        assertEquals(SourceKind.AUTHORIZED_REMOTE, source.kind)
+        assertEquals(SourceCatalog.VINTED_CATALOG_ID, source.id)
+        assertEquals(SourceKind.VINTED_CATALOG, source.kind)
         assertTrue(source.supportsAutomaticScan)
-        assertTrue(source.requiresConfiguration)
-        assertFalse(connector.isConfigured())
+        assertFalse(source.requiresConfiguration)
+        assertFalse(source.defaultEnabled)
+        assertEquals("https://www.vinted.it", SourceCatalog.VINTED_ITALY_BASE_URL)
     }
 
     @Test
