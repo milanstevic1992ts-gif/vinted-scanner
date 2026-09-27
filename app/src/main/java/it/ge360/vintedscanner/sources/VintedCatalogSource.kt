@@ -57,10 +57,18 @@ class VintedCatalogSource(
     }
 
     internal fun buildSearchUrl(search: SavedSearch): String {
-        val query = listOfNotNull(
-            search.brand?.trim()?.takeIf(String::isNotBlank),
-            search.query.trim().takeIf(String::isNotBlank)
-        ).distinct().joinToString(" ")
+        val queryText = search.query.trim()
+        val brandText = search.brand?.trim()?.takeIf(String::isNotBlank)
+        val query = if (
+            brandText != null &&
+            normalizedDistance(brandText, queryText) <= 1
+        ) {
+            queryText
+        } else {
+            listOfNotNull(brandText, queryText.takeIf(String::isNotBlank))
+                .distinct()
+                .joinToString(" ")
+        }
 
         val params = mutableListOf(
             "page" to "1",
@@ -105,6 +113,8 @@ class VintedCatalogSource(
             val brand = item.optString("brand_title").trim().takeIf(String::isNotBlank)
             val size = item.optString("size_title").trim().takeIf(String::isNotBlank)
             val status = extractTitle(item.opt("status"))
+                ?: item.optString("status_title").trim().takeIf(String::isNotBlank)
+                ?: item.optString("condition").trim().takeIf(String::isNotBlank)
             val condition = listOfNotNull(brand, size, status)
                 .distinct()
                 .joinToString(" · ")
@@ -176,6 +186,29 @@ class VintedCatalogSource(
             else -> null
         } ?: return null
         return if (value < 10_000_000_000L) value * 1000L else value
+    }
+
+    private fun normalizedDistance(a: String, b: String): Int {
+        val left = a.lowercase().filter(Char::isLetterOrDigit)
+        val right = b.lowercase().filter(Char::isLetterOrDigit)
+        if (left.isEmpty()) return right.length
+        if (right.isEmpty()) return left.length
+
+        val previous = IntArray(right.length + 1) { it }
+        val current = IntArray(right.length + 1)
+        for (i in left.indices) {
+            current[0] = i + 1
+            for (j in right.indices) {
+                val cost = if (left[i] == right[j]) 0 else 1
+                current[j + 1] = minOf(
+                    current[j] + 1,
+                    previous[j + 1] + 1,
+                    previous[j] + cost
+                )
+            }
+            for (j in previous.indices) previous[j] = current[j]
+        }
+        return previous[right.length]
     }
 
     private fun encode(value: String): String =
