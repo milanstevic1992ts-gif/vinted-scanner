@@ -1653,7 +1653,7 @@ private fun SourceDiagnosticsDialog(
 
                                 if (source.descriptor.kind == SourceKind.VINTED_CATALOG) {
                                     Text(
-                                        "Sperimentale e disattivato di default: usa l'endpoint catalogo non documentato. Può smettere di funzionare o restituire 403/429; nessun bypass viene tentato.",
+                                        "Disattivato di default: legge la pagina pubblica del catalogo Vinted e riconosce le card degli annunci. Se Vinted cambia l'HTML può richiedere un aggiornamento; nessun login o bypass viene tentato.",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -1960,7 +1960,7 @@ private fun sourceKindLabel(kind: SourceKind): String =
     when (kind) {
         SourceKind.MANUAL_SHARE -> "Ingresso manuale Android"
         SourceKind.VINTED_NOTIFICATIONS -> "Listener notifiche automatico"
-        SourceKind.VINTED_CATALOG -> "Catalogo web sperimentale"
+        SourceKind.VINTED_CATALOG -> "Catalogo pubblico HTML"
     }
 
 private fun formatOptionalDate(timestamp: Long?): String =
