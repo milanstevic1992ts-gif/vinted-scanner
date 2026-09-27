@@ -21,7 +21,7 @@ import it.ge360.vintedscanner.model.SourceDiagnostic
 import it.ge360.vintedscanner.model.SourceKind
 import it.ge360.vintedscanner.model.SourceStatus
 
-class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.db", null, 8) {
+class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.db", null, 9) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
             """
@@ -274,6 +274,9 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.
         if (oldVersion < 8) {
             db.execSQL("ALTER TABLE source_diagnostics ADD COLUMN last_detail TEXT")
         }
+        if (oldVersion < 9) {
+            db.delete("source_diagnostics", "source_id = ?", arrayOf("authorized_remote"))
+        }
     }
 
     fun startCalibrationSession(targetCount: Int = 25): CalibrationSession {
@@ -452,8 +455,11 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.
                     put("kind", descriptor.kind.name)
                     put("supports_auto", if (descriptor.supportsAutomaticScan) 1 else 0)
                     put("requires_config", if (descriptor.requiresConfiguration) 1 else 0)
-                    put("enabled", 1)
-                    put("status", initialStatus.name)
+                    put("enabled", if (descriptor.defaultEnabled) 1 else 0)
+                    put(
+                        "status",
+                        if (descriptor.defaultEnabled) initialStatus.name else SourceStatus.DISABLED.name
+                    )
                     put("last_received_count", 0)
                     put("total_received", 0)
                 }
