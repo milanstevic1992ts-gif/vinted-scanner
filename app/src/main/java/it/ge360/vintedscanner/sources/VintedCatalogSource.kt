@@ -1,5 +1,6 @@
 package it.ge360.vintedscanner.sources
 
+import it.ge360.vintedscanner.domain.ListingIdentity
 import it.ge360.vintedscanner.model.Listing
 import it.ge360.vintedscanner.model.SavedSearch
 import java.io.BufferedReader
@@ -110,7 +111,7 @@ class VintedCatalogSource(
                 .takeIf(String::isNotBlank)
 
             out += Listing(
-                id = "catalog:$id",
+                id = ListingIdentity.canonicalId(url),
                 searchId = searchId,
                 title = title,
                 price = price,
