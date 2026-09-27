@@ -375,13 +375,16 @@ class ScannerRepository(
                             .asSequence()
                             .filter { search.maxPrice == null || it.price <= search.maxPrice }
                             .filter {
-                                search.brand.isNullOrBlank() ||
-                                    it.title.contains(search.brand, ignoreCase = true) ||
-                                    it.condition?.contains(search.brand, ignoreCase = true) == true
+                                val brand = search.brand
+                                brand.isNullOrBlank() ||
+                                    isNearDuplicateTerm(brand, search.query) ||
+                                    it.title.contains(brand, ignoreCase = true) ||
+                                    it.condition?.contains(brand, ignoreCase = true) == true
                             }
                             .filter {
                                 search.condition.isNullOrBlank() ||
-                                    it.condition?.contains(search.condition, ignoreCase = true) == true
+                                    it.condition.isNullOrBlank() ||
+                                    it.condition.contains(search.condition, ignoreCase = true)
                             }
                             .filter {
                                 search.size.isNullOrBlank() ||
@@ -424,6 +427,35 @@ class ScannerRepository(
             }
 
         ScanOutcome(scanned, newOpportunities)
+    }
+
+    private fun isNearDuplicateTerm(a: String, b: String): Boolean {
+        val left = a.lowercase().filter(Char::isLetterOrDigit)
+        val right = b.lowercase().filter(Char::isLetterOrDigit)
+        if (left.isBlank() || right.isBlank()) return false
+        if (left == right) return true
+
+        val maxDistance = when {
+            minOf(left.length, right.length) <= 4 -> 1
+            else -> 2
+        }
+        if (kotlin.math.abs(left.length - right.length) > maxDistance) return false
+
+        val previous = IntArray(right.length + 1) { it }
+        val current = IntArray(right.length + 1)
+        for (i in left.indices) {
+            current[0] = i + 1
+            for (j in right.indices) {
+                val cost = if (left[i] == right[j]) 0 else 1
+                current[j + 1] = minOf(
+                    current[j] + 1,
+                    previous[j + 1] + 1,
+                    previous[j] + cost
+                )
+            }
+            for (j in previous.indices) previous[j] = current[j]
+        }
+        return previous[right.length] <= maxDistance
     }
 
     private fun syncConfigurationState() {
