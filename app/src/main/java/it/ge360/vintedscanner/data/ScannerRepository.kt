@@ -17,9 +17,9 @@ import it.ge360.vintedscanner.model.RankingVerdict
 import it.ge360.vintedscanner.model.PricePoint
 import it.ge360.vintedscanner.model.SavedSearch
 import it.ge360.vintedscanner.model.SourceDiagnostic
-import it.ge360.vintedscanner.sources.AuthorizedRemoteSource
 import it.ge360.vintedscanner.sources.ListingSource
 import it.ge360.vintedscanner.sources.SourceCatalog
+import it.ge360.vintedscanner.sources.VintedCatalogSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -30,7 +30,7 @@ data class ScanOutcome(
 
 class ScannerRepository(
     private val database: AppDatabase,
-    private val sources: List<ListingSource> = listOf(AuthorizedRemoteSource()),
+    private val sources: List<ListingSource> = listOf(VintedCatalogSource()),
     private val notificationAccess: () -> Boolean = { false }
 ) {
     init {
@@ -354,6 +354,15 @@ class ScannerRepository(
                 return@forEach
             }
 
+            val lastScanAt = diagnostic?.lastScanAt
+            if (
+                source.minimumScanIntervalMs > 0 &&
+                lastScanAt != null &&
+                System.currentTimeMillis() - lastScanAt < source.minimumScanIntervalMs
+            ) {
+                return@forEach
+            }
+
             database.markSourceScanning(sourceId)
             var receivedBySource = 0
 
@@ -364,14 +373,19 @@ class ScannerRepository(
                         source.scan(search)
                             .asSequence()
                             .filter { search.maxPrice == null || it.price <= search.maxPrice }
-                            .filter { search.brand.isNullOrBlank() || it.title.contains(search.brand, ignoreCase = true) }
+                            .filter {
+                                search.brand.isNullOrBlank() ||
+                                    it.title.contains(search.brand, ignoreCase = true) ||
+                                    it.condition?.contains(search.brand, ignoreCase = true) == true
+                            }
                             .filter {
                                 search.condition.isNullOrBlank() ||
                                     it.condition?.contains(search.condition, ignoreCase = true) == true
                             }
                             .filter {
                                 search.size.isNullOrBlank() ||
-                                    it.title.contains(search.size, ignoreCase = true)
+                                    it.title.contains(search.size, ignoreCase = true) ||
+                                    it.condition?.contains(search.size, ignoreCase = true) == true
                             }
                             .forEach { raw ->
                                 scanned++
@@ -440,14 +454,20 @@ class ScannerRepository(
                         )
                     }
                 }
-                else -> {
+                SourceCatalog.VINTED_CATALOG_ID -> {
                     if (source == null || !source.isConfigured()) {
                         database.markSourceNotConfigured(
                             descriptor.id,
-                            "Richiede credenziali/API Vinted autorizzate"
+                            "Sorgente catalogo non disponibile"
+                        )
+                    } else {
+                        database.markSourceReady(
+                            descriptor.id,
+                            "Endpoint catalogo sperimentale /api/v2/catalog/items · nessun bypass anti-bot"
                         )
                     }
                 }
+                else -> Unit
             }
         }
     }
