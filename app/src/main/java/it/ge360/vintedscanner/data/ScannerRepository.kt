@@ -512,7 +512,7 @@ class ScannerRepository(
                     ) {
                         database.markSourceReady(
                             descriptor.id,
-                            "Endpoint catalogo sperimentale /api/v2/catalog/items · nessun bypass anti-bot"
+                            "Catalogo pubblico /catalog · parsing HTML locale · nessun login o bypass anti-bot"
                         )
                     }
                 }
