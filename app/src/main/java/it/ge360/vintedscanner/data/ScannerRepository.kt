@@ -487,10 +487,12 @@ class ScannerRepository(
                 }
                 SourceCatalog.VINTED_NOTIFICATIONS_ID -> {
                     if (notificationAccess()) {
-                        database.markSourceReady(
-                            descriptor.id,
-                            "Accesso notifiche concesso · ascolto del pacchetto fr.vinted"
-                        )
+                        if (current?.status != it.ge360.vintedscanner.model.SourceStatus.ERROR) {
+                            database.markSourceReady(
+                                descriptor.id,
+                                "Accesso notifiche concesso · ascolto del pacchetto fr.vinted"
+                            )
+                        }
                     } else {
                         database.markSourceNotConfigured(
                             descriptor.id,
@@ -504,7 +506,10 @@ class ScannerRepository(
                             descriptor.id,
                             "Sorgente catalogo non disponibile"
                         )
-                    } else {
+                    } else if (
+                        current?.status != it.ge360.vintedscanner.model.SourceStatus.ERROR &&
+                        current?.status != it.ge360.vintedscanner.model.SourceStatus.SCANNING
+                    ) {
                         database.markSourceReady(
                             descriptor.id,
                             "Endpoint catalogo sperimentale /api/v2/catalog/items · nessun bypass anti-bot"
