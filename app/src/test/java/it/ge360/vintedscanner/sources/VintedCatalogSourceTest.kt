@@ -29,6 +29,23 @@ class VintedCatalogSourceTest {
     }
 
     @Test
+    fun nearDuplicateBrandTypoDoesNotPolluteSearchQuery() {
+        val source = VintedCatalogSource()
+        val url = source.buildSearchUrl(
+            SavedSearch(
+                id = 2,
+                query = "hilti",
+                maxPrice = 100.0,
+                size = null,
+                brand = "hili"
+            )
+        )
+
+        assertTrue(url.contains("search_text=hilti"))
+        assertFalse(url.contains("hili+hilti"))
+    }
+
+    @Test
     fun sourceIsConfiguredButThrottled() {
         val source = VintedCatalogSource()
 
