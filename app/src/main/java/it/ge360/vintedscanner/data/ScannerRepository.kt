@@ -383,6 +383,7 @@ class ScannerRepository(
                             .filter {
                                 search.condition.isNullOrBlank() ||
                                     it.condition.isNullOrBlank() ||
+                                    !hasConditionSignal(it.condition) ||
                                     it.condition.contains(search.condition, ignoreCase = true)
                             }
                             .filter {
@@ -426,6 +427,17 @@ class ScannerRepository(
             }
 
         ScanOutcome(scanned, newOpportunities)
+    }
+
+    private fun hasConditionSignal(text: String): Boolean {
+        val value = text.lowercase()
+        return listOf(
+            "nuovo", "nuova", "new with", "new without",
+            "ottim", "excellent", "very good",
+            "buon", "good condition",
+            "discret", "fair condition",
+            "usura", "worn", "riparare", "poor condition"
+        ).any(value::contains)
     }
 
     private fun isNearDuplicateTerm(a: String, b: String): Boolean {
