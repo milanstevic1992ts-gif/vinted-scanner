@@ -28,7 +28,7 @@ object SourceCatalog {
 
     val vintedCatalog = SourceDescriptor(
         id = VINTED_CATALOG_ID,
-        name = "Catalogo Vinted sperimentale",
+        name = "Catalogo Web Vinted",
         kind = SourceKind.VINTED_CATALOG,
         supportsAutomaticScan = true,
         requiresConfiguration = false,
