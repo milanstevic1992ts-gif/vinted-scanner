@@ -73,7 +73,7 @@ class LiveScannerService : Service() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_popup_sync)
             .setContentTitle("Vinted Scanner Live")
-            .setContentText("Monitoraggio attivo · controllo locale ogni 60 secondi")
+            .setContentText("Sorgenti automatiche attive · catalogo limitato localmente e notifiche event-driven")
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setContentIntent(pendingIntent)
