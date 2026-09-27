@@ -9,8 +9,8 @@ import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
-import org.json.JSONArray
-import org.json.JSONObject
+import org.jsoup.Jsoup
+import org.jsoup.nodes.Element
 
 class VintedCatalogSource(
     private val baseUrl: String = SourceCatalog.VINTED_ITALY_BASE_URL
@@ -29,20 +29,24 @@ class VintedCatalogSource(
             connection.connectTimeout = 10_000
             connection.readTimeout = 12_000
             connection.instanceFollowRedirects = true
-            connection.setRequestProperty("Accept", "application/json")
+            connection.setRequestProperty(
+                "Accept",
+                "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+            )
             connection.setRequestProperty("Accept-Language", "it-IT,it;q=0.9,en;q=0.7")
             connection.setRequestProperty(
                 "User-Agent",
-                "VintedScanner/0.11.0 (Android; read-only catalog experiment)"
+                "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 " +
+                    "(KHTML, like Gecko) Chrome/140.0 Mobile Safari/537.36"
             )
 
             val code = connection.responseCode
             if (code !in 200..299) {
                 throw CatalogSourceException(
                     when (code) {
-                        403 -> "Catalogo Vinted HTTP 403: accesso rifiutato. Nessun bypass viene tentato."
-                        429 -> "Catalogo Vinted HTTP 429: limite richieste raggiunto."
-                        else -> "Catalogo Vinted HTTP $code"
+                        403 -> "Catalogo web Vinted HTTP 403: accesso rifiutato. Nessun bypass viene tentato."
+                        429 -> "Catalogo web Vinted HTTP 429: limite richieste raggiunto."
+                        else -> "Catalogo web Vinted HTTP $code"
                     }
                 )
             }
@@ -50,7 +54,13 @@ class VintedCatalogSource(
             val body = BufferedReader(InputStreamReader(connection.inputStream)).use {
                 it.readText()
             }
-            return parseCatalogResponse(body, search.id)
+            val listings = parseCatalogHtml(body, search.id)
+            if (listings.isEmpty()) {
+                throw CatalogSourceException(
+                    "Catalogo web raggiunto ma nessuna card articolo riconosciuta nell'HTML."
+                )
+            }
+            return listings
         } finally {
             connection.disconnect()
         }
@@ -71,11 +81,8 @@ class VintedCatalogSource(
         }
 
         val params = mutableListOf(
-            "page" to "1",
-            "per_page" to "24",
-            "order" to "newest_first",
-            "currency" to "EUR",
-            "search_text" to query
+            "search_text" to query,
+            "order" to "newest_first"
         )
         search.maxPrice?.let {
             params += "price_to" to formatNumber(it)
@@ -84,52 +91,58 @@ class VintedCatalogSource(
         val encoded = params.joinToString("&") { (key, value) ->
             encode(key) + "=" + encode(value)
         }
-        return baseUrl.trimEnd('/') + "/api/v2/catalog/items?" + encoded
+        return baseUrl.trimEnd('/') + "/catalog?" + encoded
     }
 
-    internal fun parseCatalogResponse(
+    internal fun parseCatalogHtml(
         body: String,
         searchId: Long
     ): List<Listing> {
-        val root = JSONObject(body)
-        val items = root.optJSONArray("items") ?: JSONArray()
+        val document = Jsoup.parse(body, baseUrl)
         val now = System.currentTimeMillis()
-        val out = ArrayList<Listing>(items.length())
+        val seen = linkedSetOf<String>()
+        val out = mutableListOf<Listing>()
 
-        for (index in 0 until items.length()) {
-            val item = items.optJSONObject(index) ?: continue
-            val id = item.opt("id")?.toString()?.takeIf(String::isNotBlank) ?: continue
-            val title = item.optString("title").trim().takeIf(String::isNotBlank)
-                ?: "Annuncio Vinted $id"
-            val price = extractMoney(item.opt("price"))
-                ?: extractMoney(item.opt("total_item_price"))
-                ?: continue
+        for (link in document.select("a[href*=/items/]")) {
+            if (out.size >= 24) break
 
-            val url = item.optString("url")
-                .trim()
-                .takeIf(String::isNotBlank)
-                ?: baseUrl.trimEnd('/') + "/items/" + id
+            val url = link.absUrl("href").ifBlank {
+                normalizeItemUrl(link.attr("href"))
+            }
+            if (url.isBlank()) continue
 
-            val brand = item.optString("brand_title").trim().takeIf(String::isNotBlank)
-            val size = item.optString("size_title").trim().takeIf(String::isNotBlank)
-            val status = extractTitle(item.opt("status"))
-                ?: item.optString("status_title").trim().takeIf(String::isNotBlank)
-                ?: item.optString("condition").trim().takeIf(String::isNotBlank)
+            val id = ListingIdentity.canonicalId(url)
+            if (!seen.add(id)) continue
+
+            val image = findNearbyImage(link)
+            val alt = image?.attr("alt")?.trim().orEmpty()
+            val contextText = findCardText(link)
+            val sourceText = listOf(alt, contextText)
+                .filter(String::isNotBlank)
+                .joinToString(" · ")
+
+            val price = extractFirstPrice(sourceText) ?: continue
+            val title = extractTitle(alt, contextText)
+                ?: "Annuncio Vinted"
+
+            val brand = extractNamedField(alt, "brand")
+            val size = extractNamedField(alt, "taglia")
+            val status = extractNamedField(alt, "condizioni")
             val condition = listOfNotNull(brand, size, status)
                 .distinct()
                 .joinToString(" · ")
                 .takeIf(String::isNotBlank)
 
             out += Listing(
-                id = ListingIdentity.canonicalId(url),
+                id = id,
                 searchId = searchId,
                 title = title,
                 price = price,
                 shipping = 0.0,
                 url = url,
-                imageUrl = extractPhotoUrl(item),
+                imageUrl = extractImageUrl(image),
                 condition = condition,
-                publishedAt = extractTimestamp(item),
+                publishedAt = null,
                 firstSeenAt = now,
                 lastSeenAt = now
             )
@@ -137,55 +150,89 @@ class VintedCatalogSource(
         return out
     }
 
-    private fun extractMoney(value: Any?): Double? =
-        when (value) {
-            null, JSONObject.NULL -> null
-            is Number -> value.toDouble()
-            is String -> value.replace(",", ".").toDoubleOrNull()
-            is JSONObject -> {
-                val candidates = listOf(
-                    value.opt("amount"),
-                    value.opt("amount_numeric"),
-                    value.opt("value")
-                )
-                candidates.firstNotNullOfOrNull(::extractMoney)
+    private fun findNearbyImage(link: Element): Element? {
+        link.selectFirst("img[alt]")?.let { return it }
+
+        var current: Element? = link
+        repeat(5) {
+            current = current?.parent()
+            val image = current?.selectFirst("img[alt]")
+            if (image != null && image.attr("alt").contains("€")) {
+                return image
             }
-            else -> null
+        }
+        return null
+    }
+
+    private fun findCardText(link: Element): String {
+        var current: Element? = link
+        repeat(5) {
+            val text = current?.text()?.trim().orEmpty()
+            if (text.contains("€") && text.length <= 600) {
+                return text
+            }
+            current = current?.parent()
+        }
+        return link.text().trim()
+    }
+
+    private fun extractTitle(alt: String, context: String): String? {
+        if (alt.isNotBlank()) {
+            val markers = listOf(", brand:", ", condizioni:", ", taglia:")
+            val cut = markers
+                .map { marker -> alt.indexOf(marker, ignoreCase = true) }
+                .filter { it > 0 }
+                .minOrNull()
+            val title = if (cut != null) alt.substring(0, cut) else alt.substringBefore("€")
+            title.trim(' ', ',', '·').takeIf(String::isNotBlank)?.let { return it }
         }
 
-    private fun extractTitle(value: Any?): String? =
-        when (value) {
-            null, JSONObject.NULL -> null
-            is String -> value.trim().takeIf(String::isNotBlank)
-            is JSONObject -> value.optString("title").trim().takeIf(String::isNotBlank)
-            else -> value.toString().trim().takeIf(String::isNotBlank)
-        }
+        return context
+            .substringBefore("€")
+            .trim(' ', ',', '·')
+            .takeIf { it.length in 2..180 }
+    }
 
-    private fun extractPhotoUrl(item: JSONObject): String? {
-        val direct = item.optJSONObject("photo")
-            ?.optString("url")
-            ?.trim()
-            ?.takeIf(String::isNotBlank)
-        if (direct != null) return direct
-
-        val photos = item.optJSONArray("photos") ?: return null
-        if (photos.length() == 0) return null
-        return photos.optJSONObject(0)
-            ?.optString("url")
+    private fun extractNamedField(text: String, field: String): String? {
+        if (text.isBlank()) return null
+        val regex = Regex(
+            """(?:^|,\s*)${Regex.escape(field)}:\s*([^,]+)""",
+            RegexOption.IGNORE_CASE
+        )
+        return regex.find(text)
+            ?.groupValues
+            ?.getOrNull(1)
             ?.trim()
             ?.takeIf(String::isNotBlank)
     }
 
-    private fun extractTimestamp(item: JSONObject): Long? {
-        val raw = item.opt("created_at_ts")
-            ?: item.opt("created_at_timestamp")
+    private fun extractFirstPrice(text: String): Double? {
+        val match = Regex("""(\d{1,6}(?:[.,]\d{1,2})?)\s*€""")
+            .find(text)
             ?: return null
-        val value = when (raw) {
-            is Number -> raw.toLong()
-            is String -> raw.toLongOrNull()
-            else -> null
-        } ?: return null
-        return if (value < 10_000_000_000L) value * 1000L else value
+        return match.groupValues[1]
+            .replace(".", "")
+            .replace(",", ".")
+            .toDoubleOrNull()
+    }
+
+    private fun extractImageUrl(image: Element?): String? {
+        if (image == null) return null
+        return image.absUrl("src").takeIf(String::isNotBlank)
+            ?: image.absUrl("data-src").takeIf(String::isNotBlank)
+            ?: image.attr("srcset")
+                .substringBefore(' ')
+                .trim()
+                .takeIf(String::isNotBlank)
+    }
+
+    private fun normalizeItemUrl(href: String): String {
+        if (href.isBlank()) return ""
+        return when {
+            href.startsWith("http://") || href.startsWith("https://") -> href
+            href.startsWith("/") -> baseUrl.trimEnd('/') + href
+            else -> baseUrl.trimEnd('/') + "/" + href
+        }
     }
 
     private fun normalizedDistance(a: String, b: String): Int {
