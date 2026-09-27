@@ -1672,12 +1672,7 @@ private fun SourceDiagnosticsDialog(
                                                 Text("ABILITA ACCESSO NOTIFICHE")
                                             }
                                         }
-                                        SourceKind.AUTHORIZED_REMOTE -> {
-                                            Text(
-                                                "Richiede un accesso API Vinted ufficiale/autorizzato. Nessuna credenziale è configurata.",
-                                                style = MaterialTheme.typography.bodySmall
-                                            )
-                                        }
+                                        SourceKind.VINTED_CATALOG,
                                         SourceKind.MANUAL_SHARE -> Unit
                                     }
                                 }
@@ -1957,7 +1952,7 @@ private fun sourceKindLabel(kind: SourceKind): String =
     when (kind) {
         SourceKind.MANUAL_SHARE -> "Ingresso manuale Android"
         SourceKind.VINTED_NOTIFICATIONS -> "Listener notifiche automatico"
-        SourceKind.AUTHORIZED_REMOTE -> "Connettore remoto autorizzato"
+        SourceKind.VINTED_CATALOG -> "Catalogo web sperimentale"
     }
 
 private fun formatOptionalDate(timestamp: Long?): String =
