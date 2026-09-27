@@ -516,7 +516,6 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.
         val values = ContentValues().apply {
             put("enabled", if (enabled) 1 else 0)
             put("status", if (enabled) SourceStatus.IDLE.name else SourceStatus.DISABLED.name)
-            put("last_event_at", System.currentTimeMillis())
             put("last_detail", if (enabled) "Sorgente abilitata" else "Sorgente disattivata")
             putNull("last_error")
         }
@@ -581,7 +580,6 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, "vinted_scanner.
     fun markSourceNotConfigured(sourceId: String, detail: String? = null) {
         val values = ContentValues().apply {
             put("status", SourceStatus.NOT_CONFIGURED.name)
-            put("last_event_at", System.currentTimeMillis())
             put("last_received_count", 0)
             detail?.let { put("last_detail", it.take(500)) } ?: putNull("last_detail")
             putNull("last_error")
