@@ -1651,6 +1651,14 @@ private fun SourceDiagnosticsDialog(
                                     fontWeight = FontWeight.SemiBold
                                 )
 
+                                if (source.descriptor.kind == SourceKind.VINTED_CATALOG) {
+                                    Text(
+                                        "Sperimentale e disattivato di default: usa l'endpoint catalogo non documentato. Può smettere di funzionare o restituire 403/429; nessun bypass viene tentato.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+
                                 if (
                                     source.descriptor.requiresConfiguration &&
                                     source.status == SourceStatus.NOT_CONFIGURED
