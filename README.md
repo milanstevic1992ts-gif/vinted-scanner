@@ -4,7 +4,7 @@ APK Android standalone per raccogliere annunci condivisi dal telefono, confronta
 
 ## Stato attuale
 
-Versione applicazione: **0.11.0**
+Versione applicazione: **0.12.0**
 
 ### Fase 1 — Fondazioni
 - [x] progetto Android nativo Kotlin + Jetpack Compose
@@ -163,16 +163,16 @@ Versione applicazione: **0.11.0**
 - [x] migrazione SQLite v8
 - [x] test catalogo sorgenti e deep-link Vinted
 
-### Fase 11 — Catalogo Vinted sperimentale
+### Fase 11 — Catalogo Vinted
 - [x] rimosso completamente il placeholder Vinted Pro/API remota
-- [x] endpoint catalogo `/api/v2/catalog/items`
 - [x] dominio Italia `https://www.vinted.it`
-- [x] parametri `search_text`, `price_to`, `page`, `per_page`, `order=newest_first`
+- [x] query pagina pubblica `/catalog?search_text=...&price_to=...&order=newest_first`
 - [x] massimo 24 risultati per ricerca
 - [x] intervallo minimo locale 5 minuti
 - [x] gestione esplicita HTTP 403 e 429
-- [x] nessun bypass login/anti-bot/proxy/cookie rotation
-- [x] parsing prezzo stringa/numero/oggetto
+- [x] nessun login/bypass anti-bot/proxy/cookie rotation
+- [x] parsing HTML con jsoup
+- [x] parsing prezzo con punto e virgola decimale
 - [x] parsing brand, taglia, condizione e foto quando presenti
 - [x] ID canonico condiviso tra Catalogo, Notifiche e Condivisione
 - [x] deduplicazione cross-source
@@ -182,7 +182,7 @@ Versione applicazione: **0.11.0**
 - [x] Catalogo disattivato di default
 - [x] migrazione SQLite v9 e rimozione sorgente obsoleta
 - [x] diagnostica chiara dei limiti della sorgente
-- [x] test query Catalogo, throttling, typo Hilti e identità cross-source
+- [x] test query Catalogo, parser HTML, prezzi, throttling, typo Hilti e identità cross-source
 
 ## Come funziona l'Intelligence locale
 
@@ -204,12 +204,12 @@ Il cuore insegna un segnale positivo leggero. I feedback motivati insegnano inve
 
 Il core usa l'interfaccia `ListingSource`, quindi UI, archivio, Intelligence e notifiche non dipendono da uno specifico provider.
 
-Sorgenti presenti nella 0.11.0:
+Sorgenti presenti nella 0.12.0:
 - **Condivisione Android**: attiva e realmente utilizzabile;
 - **Notifiche Vinted**: sorgente automatica event-driven che ascolta esclusivamente il pacchetto Android ufficiale `fr.vinted`; richiede il permesso Android di accesso alle notifiche;
-- **Catalogo Vinted sperimentale**: sorgente read-only basata sull'endpoint non documentato `/api/v2/catalog/items`, disattivata di default, limitata a 24 risultati per ricerca e con intervallo minimo locale di 5 minuti.
+- **Catalogo Web Vinted**: sorgente read-only basata sulla pagina pubblica `/catalog`, disattivata di default, limitata a 24 risultati per ricerca e con intervallo minimo locale di 5 minuti.
 
-La sorgente Catalogo non usa login bypass, proxy, rotazione IP, cookie farming o tecniche anti-bot. Se Vinted restituisce `403` o `429`, la sorgente passa in errore e le altre sorgenti restano operative.
+La sorgente Catalogo non usa login, proxy, rotazione IP, cookie farming o tecniche anti-bot. Legge l'HTML pubblico e riconosce link articolo, titolo, prezzo, brand, taglia, condizione e immagine quando presenti. Se Vinted cambia il markup o restituisce `403`/`429`, la sorgente passa in errore e le altre sorgenti restano operative.
 
 Il pannello Diagnostica Sorgenti mostra stato, ultimo evento, ultimo scan, ultimo successo, quantità ricevute, dettaglio dell'ultimo evento ed eventuali errori. Quando manca il permesso alle notifiche compare il pulsante **ABILITA ACCESSO NOTIFICHE** invece di uno switch ingannevole.
 
@@ -244,7 +244,7 @@ L'Indice Affare non è una probabilità di guadagno e non sostituisce lo score t
 
 ## Modalità Live
 
-La modalità Live è avviata solo dall'utente. Nella 0.11.0 riceve eventi dalla sorgente **Notifiche Vinted** e può eseguire il **Catalogo Vinted sperimentale** se l'utente lo abilita. Il Catalogo applica comunque il proprio intervallo minimo di 5 minuti. Se Live è acceso ma nessuna sorgente automatica è pronta, l'interfaccia mostra **LIVE SENZA SORGENTE** invece di dichiarare falsamente il monitoraggio operativo.
+La modalità Live è avviata solo dall'utente. Nella 0.12.0 riceve eventi dalla sorgente **Notifiche Vinted** e può eseguire il **Catalogo Web Vinted** se l'utente lo abilita. Il Catalogo applica comunque il proprio intervallo minimo di 5 minuti. Se Live è acceso ma nessuna sorgente automatica è pronta, l'interfaccia mostra **LIVE SENZA SORGENTE** invece di dichiarare falsamente il monitoraggio operativo.
 
 Per la sorgente Notifiche Vinted Android richiede una concessione manuale una tantum in **Accesso notifiche**. L'app non può concedersi questo permesso da sola.
 
