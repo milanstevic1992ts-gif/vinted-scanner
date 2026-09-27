@@ -9,8 +9,8 @@ android {
         applicationId = "it.ge360.vintedscanner"
         minSdk = 24
         targetSdk = 37
-        versionCode = 11
-        versionName = "0.11.0"
+        versionCode = 12
+        versionName = "0.12.0"
     }
     buildTypes {
         release {
@@ -43,6 +43,7 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.work:work-runtime-ktx:2.11.2")
+    implementation("org.jsoup:jsoup:1.23.2")
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")
 }
