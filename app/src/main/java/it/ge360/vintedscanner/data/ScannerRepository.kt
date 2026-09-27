@@ -2,6 +2,7 @@ package it.ge360.vintedscanner.data
 
 import it.ge360.vintedscanner.domain.CalibrationAnalyzer
 import it.ge360.vintedscanner.domain.DealRanker
+import it.ge360.vintedscanner.domain.ListingIdentity
 import it.ge360.vintedscanner.domain.MarketEstimator
 import it.ge360.vintedscanner.domain.OpportunityScorer
 import it.ge360.vintedscanner.domain.PreferenceEngine
@@ -287,7 +288,7 @@ class ScannerRepository(
         seenAt: Long = System.currentTimeMillis()
     ): Pair<Listing, Boolean> {
         val raw = Listing(
-            id = SharedListingParser.stableId(url),
+            id = ListingIdentity.canonicalId(url),
             searchId = searchId,
             title = title.trim().ifBlank { "Annuncio Vinted" },
             price = price,
