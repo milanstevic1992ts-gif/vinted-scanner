@@ -6,8 +6,9 @@ import it.ge360.vintedscanner.model.SourceKind
 object SourceCatalog {
     const val ANDROID_SHARE_ID = "android_share"
     const val VINTED_NOTIFICATIONS_ID = "vinted_notifications"
+    const val VINTED_CATALOG_ID = "vinted_catalog"
     const val VINTED_ANDROID_PACKAGE = "fr.vinted"
-    const val AUTHORIZED_REMOTE_ID = "authorized_remote"
+    const val VINTED_ITALY_BASE_URL = "https://www.vinted.it"
 
     val androidShare = SourceDescriptor(
         id = ANDROID_SHARE_ID,
@@ -25,13 +26,14 @@ object SourceCatalog {
         requiresConfiguration = true
     )
 
-    val authorizedRemote = SourceDescriptor(
-        id = AUTHORIZED_REMOTE_ID,
-        name = "API remota autorizzata",
-        kind = SourceKind.AUTHORIZED_REMOTE,
+    val vintedCatalog = SourceDescriptor(
+        id = VINTED_CATALOG_ID,
+        name = "Catalogo Vinted sperimentale",
+        kind = SourceKind.VINTED_CATALOG,
         supportsAutomaticScan = true,
-        requiresConfiguration = true
+        requiresConfiguration = false,
+        defaultEnabled = false
     )
 
-    val defaults = listOf(androidShare, vintedNotifications, authorizedRemote)
+    val defaults = listOf(androidShare, vintedNotifications, vintedCatalog)
 }
